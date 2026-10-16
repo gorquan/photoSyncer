@@ -112,7 +112,7 @@ func (s *Server) albumList(w http.ResponseWriter, r *http.Request) {
 			albums = append(albums, map[string]any{"albumId": album.AlbumID, "name": album.Name, "mediaCount": len(album.Assets), "lastUpdateTime": album.LastUpdateTime})
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"albums": albums, "isLastPage": end >= len(ids)}})
+	writeJSON(w, http.StatusOK, map[string]any{"code": 0, "data": map[string]any{"albums": albums, "isLastPage": end >= len(ids)}})
 }
 
 func (s *Server) galleryList(w http.ResponseWriter, r *http.Request) {
@@ -158,7 +158,7 @@ func (s *Server) galleryList(w http.ResponseWriter, r *http.Request) {
 			rows = append(rows, galleryAssetJSON(asset))
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"galleries": rows, "isLastPage": end >= len(assets)}})
+	writeJSON(w, http.StatusOK, map[string]any{"code": 0, "data": map[string]any{"galleries": rows, "isLastPage": end >= len(assets)}})
 }
 
 func (s *Server) timeline(w http.ResponseWriter, r *http.Request) {
@@ -185,7 +185,7 @@ func (s *Server) timeline(w http.ResponseWriter, r *http.Request) {
 		counts[day]++
 		fmt.Fprintf(hash, "%d:%d:%d:%s;", asset.ID, asset.DateTaken, asset.Size, asset.SHA1)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"indexHash": hex.EncodeToString(hash.Sum(nil)), "dayCount": counts}})
+	writeJSON(w, http.StatusOK, map[string]any{"code": 0, "data": map[string]any{"indexHash": hex.EncodeToString(hash.Sum(nil)), "dayCount": counts}})
 }
 
 // albumFull 返回全量相册快照及每相册水位头（incrementalTag=最新变更序号），供位点同步预检。
@@ -288,7 +288,7 @@ func (s *Server) recordingList(w http.ResponseWriter, r *http.Request) {
 			rows = append(rows, map[string]any{"id": recording.ID, "name": recording.RawName, "create_time": recording.CreateTime, "sha1": recording.SHA1, "size": recording.Size})
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": map[string]any{"list": rows}})
+	writeJSON(w, http.StatusOK, map[string]any{"code": 0, "data": map[string]any{"list": rows}})
 }
 
 func (s *Server) galleryStorage(w http.ResponseWriter, r *http.Request) {

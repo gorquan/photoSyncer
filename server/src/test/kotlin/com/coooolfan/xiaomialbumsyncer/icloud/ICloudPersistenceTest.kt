@@ -120,11 +120,11 @@ class ICloudPersistenceTest {
             assertNotEquals(first.id, mixed.first { it.checksum == "second" }.id)
             assertEquals("record", ICloudResourceKey.decode(sql.findById(Asset::class, first.id)!!.remoteKey).assetId)
             val xiaomi = Asset(resource("xiaomi")) {
-                remoteKey = first.id.toString()
+                remoteKey = ICloudResourceKey(first.id.toString(), "resOriginal").encode()
             }
             val isolated = media.saveAssets(listOf(xiaomi)).single()
             assertNotEquals(first.id, isolated.id)
-            assertEquals(first.id.toString(), isolated.remoteKey)
+            assertEquals(first.id.toString(), ICloudResourceKey.decode(isolated.remoteKey).assetId)
             assertEquals(isolated.id, media.saveAssets(listOf(xiaomi)).single().id)
             assertEquals(first.remoteKey, sql.findById(Asset::class, first.id)!!.remoteKey)
 

@@ -145,6 +145,7 @@ const messages: typeof zh = {
       empty: 'No scheduled tasks yet',
     },
     status: {
+      finished: 'Execution finished',
       completed: 'Completed',
       running: 'Running',
       terminated: 'Terminated',
@@ -159,7 +160,7 @@ const messages: typeof zh = {
       exif: 'Fill EXIF',
       skipExisting: 'Skip existing',
       rewriteFsTime: 'Rewrite file time',
-      sha1: 'SHA1 check',
+      sha1: 'File verification',
     },
     row: {
       toggleHintEnabled: 'Enabled, click to disable',
@@ -247,7 +248,22 @@ const messages: typeof zh = {
       colFilePath: 'File Path',
       colDownloadTime: 'Downloaded At',
       colDownload: 'Download',
-      colSha1: 'SHA1',
+      colPublication: 'Publication',
+      colSha1: 'File verification',
+      publication: {
+        LEGACY: 'Legacy, unconfirmed',
+        PREPARING: 'Preparing',
+        PUBLISHED: 'Published locally',
+        FAILED: 'Failed, retry pending',
+      },
+      verification: {
+        LEGACY: 'Legacy (unknown basis)',
+        PENDING: 'Pending',
+        SKIPPED: 'Source check disabled',
+        SOURCE_VERIFIED: 'Source SHA-1 matched',
+        TRANSPORT_VERIFIED: 'Size/local digest checked',
+        FAILED: 'Verification failed',
+      },
       colExif: 'EXIF',
       colFsTime: 'File Time',
       colMessage: 'Message',
@@ -346,6 +362,12 @@ const messages: typeof zh = {
     toggle: {
       downloadImages: 'Download photos',
       downloadVideos: 'Download videos',
+      downloadLivePhotos: 'Download Apple Live Photo motion',
+      downloadLivePhotosHint:
+        'Include the paired video with photos, independently of ordinary videos. Xiaomi motion stays inside the original image.',
+      synologyPhotos: 'Synology Photos layout',
+      synologyPhotosHint:
+        'Use a fixed destination root. Store one original per account/library; Live Photo image and video share a folder and basename. HEIC / HEVC preview depends on Image Assistant, NAS and client capabilities. Existing files are not migrated; use a new empty folder.',
       downloadAudios: 'Download recordings',
       notify: 'Send notifications',
       enabled: 'Scheduled trigger',
@@ -380,7 +402,7 @@ const messages: typeof zh = {
         'Sets the file system time to the asset time recorded in the cloud.',
       checkSha1: 'Verify files',
       checkSha1Hint:
-        'Compares the checksum after downloading. If verification fails, further processing of the asset stops and it is retried in the next task run.',
+        'Xiaomi compares source SHA-1. iCloud checks size and supported containers and records local SHA-256; this does not compare an Apple source digest. Failures retry next run.',
       exifTimeZone: 'EXIF time zone',
       exifTimeZoneHint:
         'Time zone used when writing EXIF; only applies when "Fill EXIF time" is enabled.',
@@ -395,11 +417,12 @@ const messages: typeof zh = {
       fileTimeWorkers: 'File time rewrite',
       fileTimeWorkersHint: 'File system time rewrite workers',
       verifiers: 'File verification',
-      verifiersHint: 'SHA1 verification workers',
+      verifiersHint: 'File verification workers',
       exifProcessors: 'EXIF fill',
       exifProcessorsHint: 'EXIF fill workers',
     },
     errors: {
+      synologyRoot: 'Synology Photos mode requires a fixed root without path expressions.',
       required: 'Required',
       requiredSelect: 'Please select an option',
       invalidExpression: "This doesn't look like a valid expression",

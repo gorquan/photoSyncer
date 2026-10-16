@@ -1010,10 +1010,8 @@
 {
   "name":"com.coooolfan.xiaomialbumsyncer.pipeline.CrontabPipeline",
   "allDeclaredFields":true,
-  "queryAllDeclaredMethods":true,
-  "queryAllPublicMethods":true,
-  "queryAllDeclaredConstructors":true,
-  "methods":[{"name":"<init>","parameterTypes":["com.coooolfan.xiaomialbumsyncer.pipeline.stages.DownloadStage","com.coooolfan.xiaomialbumsyncer.pipeline.stages.VerificationStage","com.coooolfan.xiaomialbumsyncer.pipeline.stages.ExifProcessingStage","com.coooolfan.xiaomialbumsyncer.pipeline.stages.FileTimeStage","com.coooolfan.xiaomialbumsyncer.service.SystemConfigService","com.coooolfan.xiaomialbumsyncer.service.AssetService","com.coooolfan.xiaomialbumsyncer.service.CrontabService"] }, {"name":"getAssetService","parameterTypes":[] }, {"name":"getCrontabService","parameterTypes":[] }, {"name":"getDownloadStage","parameterTypes":[] }, {"name":"getExifProcessingStage","parameterTypes":[] }, {"name":"getFileTimeStage","parameterTypes":[] }, {"name":"getLog","parameterTypes":[] }, {"name":"getSystemConfigService","parameterTypes":[] }, {"name":"getVerificationStage","parameterTypes":[] }, {"name":"setAssetService","parameterTypes":["com.coooolfan.xiaomialbumsyncer.service.AssetService"] }, {"name":"setCrontabService","parameterTypes":["com.coooolfan.xiaomialbumsyncer.service.CrontabService"] }, {"name":"setDownloadStage","parameterTypes":["com.coooolfan.xiaomialbumsyncer.pipeline.stages.DownloadStage"] }, {"name":"setExifProcessingStage","parameterTypes":["com.coooolfan.xiaomialbumsyncer.pipeline.stages.ExifProcessingStage"] }, {"name":"setFileTimeStage","parameterTypes":["com.coooolfan.xiaomialbumsyncer.pipeline.stages.FileTimeStage"] }, {"name":"setLog","parameterTypes":["org.slf4j.Logger"] }, {"name":"setSystemConfigService","parameterTypes":["com.coooolfan.xiaomialbumsyncer.service.SystemConfigService"] }, {"name":"setVerificationStage","parameterTypes":["com.coooolfan.xiaomialbumsyncer.pipeline.stages.VerificationStage"] }]
+  "allDeclaredMethods":true,
+  "allDeclaredConstructors":true
 },
 {
   "name":"com.coooolfan.xiaomialbumsyncer.pipeline.CrontabPipeline$execute$$inlined$transform$1"
@@ -2350,5 +2348,29 @@
 {
   "name":"sun.security.x509.SubjectKeyIdentifierExtension",
   "methods":[{"name":"<init>","parameterTypes":["java.lang.Boolean","java.lang.Object"] }]
+},
+{
+  "name": "com.coooolfan.xiaomialbumsyncer.service.MediaPublicationService",
+  "allDeclaredConstructors": true,
+  "allDeclaredMethods": true,
+  "allDeclaredFields": true
+},
+{
+  "name": "com.coooolfan.xiaomialbumsyncer.utils.PublicationReceipt",
+  "allDeclaredConstructors": true,
+  "allDeclaredMethods": true,
+  "allDeclaredFields": true
+},
+{
+  "name": "com.coooolfan.xiaomialbumsyncer.utils.PublishedResource",
+  "allDeclaredConstructors": true,
+  "allDeclaredMethods": true,
+  "allDeclaredFields": true
+},
+{
+  "name": "com.coooolfan.xiaomialbumsyncer.utils.ArchivedOriginal",
+  "allDeclaredConstructors": true,
+  "allDeclaredMethods": true,
+  "allDeclaredFields": true
 }
 ]

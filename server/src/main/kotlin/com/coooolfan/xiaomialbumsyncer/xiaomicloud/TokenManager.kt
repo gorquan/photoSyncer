@@ -99,18 +99,13 @@ class TokenManager(private val sql: KSqlClient, private val notifyService: Notif
         val loginReq = Request.Builder().url(loginUrl).ua()
             .header("Cookie", withCookie("userId" to userId, "deviceId" to deviceId, "passToken" to passToken)).get()
             .build()
-        val (location, loginResMeta) = client().newCall(loginReq).execute().use { res ->
-            val code = res.code
-            val headers = res.headers.toString()
-            val body = res.body.string()
-            throwIfNotSuccess(code)
-            res.header("Location") to Triple(code, headers, body)
+        val (location, loginResCode) = client().newCall(loginReq).execute().use { res ->
+            throwIfNotSuccess(res.code)
+            res.header("Location") to res.code
         }
-        val (loginResCode, loginResHeaders, loginResDebugBody) = loginResMeta
-
         if (location == null) {
-            log.error("loginResStatusCode: $loginResCode body: $loginResDebugBody headers: $loginResHeaders")
-            error("no Location header")
+            log.warn("小米登录未返回授权跳转，HTTP {}", loginResCode)
+            error("小米登录凭据已失效或需要验证，请在官方网站完成验证并重新扫码更新账号")
         }
 
         // 步骤三：获取 serviceToken
@@ -130,7 +125,7 @@ class TokenManager(private val sql: KSqlClient, private val notifyService: Notif
         // passToken 失效的特征：响应的 Set-Cookie 不再下发 serviceToken
         if (serviceToken == null) {
             onPassTokenInvalid(account)
-            error("no serviceToken from remote")
+            error("小米登录凭据已失效，请重新扫码更新账号")
         }
 
         log.info("serviceToken 获取成功")

@@ -189,32 +189,10 @@ class XiaoMiApi(private val tokenManager: TokenManager) {
         // 1. 获取 OSS URL
         val fetchOssUrlJson = getJson(accountId, url)
 
-        // 与官方前端约定一致：只有 code == 0 才是成功，其余一律视为失败
-        val code = fetchOssUrlJson.at("/code").asInt()
-        if (code != 0) {
-            val retriable = fetchOssUrlJson.at("/retriable").asBoolean()
-            val reason = fetchOssUrlJson.at("/description").asText()
-                .ifBlank { fetchOssUrlJson.at("/reason").asText() }
-            if (retriable) {
-                // 瞬时错误，抛异常交给流水线在下一个周期重试
-                throw IllegalStateException("小米返回错误码 $code ($reason), retriable=true")
-            }
-            // 文件已被删除或不可下载（如相册 code=50050、录音 code=50202，retriable=false），
-            // 跳过并标记为完成，避免后续周期反复请求
-            log.warn(
-                "文件: {} id: {} 不可下载: code={} retriable=false ({}), 跳过下载",
-                asset.fileName,
-                asset.id,
-                code,
-                reason
-            )
-            return false
-        }
-
         val ossUrl = fetchOssUrlJson.at("/data/url").asText()
         if (!ossUrl.startsWith("http")) {
             // code=0 却缺少合法下载地址属于反常响应，记录原始响应体后抛异常等待重试
-            log.warn("文件: {} id: {} 的 storage 响应缺少合法 data.url: {}", asset.fileName, asset.id, fetchOssUrlJson)
+            log.warn("资产 {} 的 storage 响应缺少合法下载地址", asset.id)
             throw IllegalStateException("storage 响应缺少合法的 data.url")
         }
 
@@ -250,8 +228,12 @@ class XiaoMiApi(private val tokenManager: TokenManager) {
             .get()
             .build()
         return client().executeWithRetry(req).use { res ->
-            throwIfNotSuccess(res.code)
-            Solon.context().objectMapper.readTree(res.body)
+            val tree = runCatching { Solon.context().objectMapper.readTree(res.body) }.getOrElse {
+                if (res.code == 401 || res.code == 403) error("小米账号授权失效，请重新扫码更新账号凭据后重试")
+                throwIfNotSuccess(res.code)
+                error("小米接口返回无效 JSON")
+            }
+            requireNotNull(tree) { "小米接口返回空 JSON" }.validateXiaomiResponse(res.code)
         }
     }
 
@@ -263,6 +245,7 @@ class XiaoMiApi(private val tokenManager: TokenManager) {
                 Asset {
                     remoteKey = jsonNode.get("id").asLong().toString()
                     recordingType = null
+                    motionPhotoHint = hasXiaomiMotionHint(jsonNode.get("description"))
                     fileName = fullFileName
                     type = AssetType.valueOf(jsonNode.get("type").asText().uppercase())
                     dateTaken = Instant.ofEpochMilli(jsonNode.get("dateTaken").asLong())
@@ -338,4 +321,20 @@ internal fun parseXiaomiRecordingName(name: String): XiaomiRecordingName {
         fileName = "$base.$ext",
         recordingType = RecordingType.fromCode(typeCode.toIntOrNull() ?: -1),
     )
+}
+
+private val XIAOMI_DESCRIPTION_MAPPER = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
+
+/** Flags are hints, never proof that the downloaded original contains a playable video. */
+internal fun hasXiaomiMotionHint(description: JsonNode?): Boolean {
+    val flags = when {
+        description == null -> return false
+        description.isObject -> description.path("specialTypeFlagsNew").asText("")
+        description.isTextual -> try {
+            XIAOMI_DESCRIPTION_MAPPER.readTree(description.asText())
+                .path("specialTypeFlagsNew").asText("")
+        } catch (_: Exception) { return false }
+        else -> return false
+    }.split(':').filter { it.isNotEmpty() }.toSet()
+    return "1006" in flags || ("1073" in flags && "1065" in flags)
 }

@@ -22,6 +22,9 @@ export type CrontabDto = {
             readonly endTime?: string | undefined;
             readonly syncCursors?: {readonly [key:string]: string} | undefined;
             readonly fetchedAllAssets: boolean;
+            /**
+             * Execution ended, including handled failures; details.publicationStatus is export evidence.
+             */
             readonly isCompleted: boolean;
             readonly detailsCount: number;
         }>;

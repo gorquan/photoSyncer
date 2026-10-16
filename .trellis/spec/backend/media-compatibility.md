@@ -1,0 +1,32 @@
+# Media compatibility contract
+
+## Scope / Trigger
+Xiaomi and iCloud originals exported to Synology Photos. Evidence: docs/plan/synology-photos-validation.md.
+
+## Signatures
+Asset.checksum is provider-specific: Xiaomi ordinary SHA-1; CloudKit opaque fileChecksum. CrontabHistoryDetail.sha1Verified is a legacy stage-completion flag, not proof of SHA-1.
+
+## Contracts
+Preserve original Apple ContentIdentifier and Xiaomi embedded video/XMP. Apple primary image and companion MOV share a stable basename from account/zone/record identity; alternate originals have distinct roles. Download ordinary videos independently from Live Photo companions. Persist local SHA-256 and verification basis. Never claim NAS indexing/preview from local completion.
+
+## Validation & Error Matrix
+Xiaomi checksum mismatch or source-size mismatch => failure, retryable. CloudKit opaque signature => size/structure plus local SHA-256, never raw SHA-1 interpretation. Motion metadata with invalid ranges/container => explicit failure; valid dynamic originals bypass metadata mutation. Publish only validated complete components. Existing paths require version/integrity evidence.
+
+## Good / Base / Bad Cases
+Good: JPEG+MOV retain bytes and shared stem; GContainer/MicroVideo originals retain trailers. Base: ordinary JPEG/video preserve bytes unless requested metadata fill. Bad: unknown signature deletes valid Apple original, skipped Xiaomi check reported verified, truncated tail published, only one Live component reported complete.
+
+## Tests Required
+Opaque signatures, real SHA1 mismatch, independent SHA256, stable pairing across checksums/albums, video switch, alternate role collision, malformed XMP/ranges/MP4 boxes, failed publication and restart/version changes.
+
+## Wrong vs Correct
+Wrong: strip first CloudKit signature byte and compare SHA1. Correct: store signature as version evidence and report size/structure verification separately. Wrong: blindly rewrite JPEG EXIF with an appended video. Correct: detect motion metadata and preserve validated original bytes.
+
+## Recoverable publication
+
+Use `MediaPublicationService`/`MediaPublisher`, not direct stage writes into final paths. `PHOTO_SYNCER_MEDIA_ROOT` defaults to the database parent/media and must stay outside indexed destinations. Originals are immutable retained files; transforms use copies. Optional source SHA-1 never disables mandatory size/local SHA256/container/motion checks. Receipts include processor version, source metadata, target paths, selected roles and config; reuse verifies original/final hashes and requested mtime. Missing/corrupt output repairs from the retained original. Old completed history never bypasses receipt evaluation.
+
+Publish required Apple resources together, MOV before primary. Persist pending state before renaming and complete only after all output operations. This is repairable multi-file publication, not a multi-file atomic transaction. Remove obsolete output paths only from a trusted same-group/layout receipt and only if bytes still match its hash; preserve originals and unowned/modified old exports. Authoritative Apple role sets retire removed companion/alternate resources; partial imports cannot claim role completeness.
+
+`publicationStatus=PUBLISHED` is local export evidence. Execution `endTime/isCompleted` includes handled failures and must not be styled/reported as all media successfully exported. Store original and output digests separately. Ordinary/Apple static single-file inspection emits no missing-dynamic warning; Xiaomi hinted static degradation remains explicit.
+
+Refresh loaded media metadata across every membership of the same logical resource/checksum, including date, extension and motion hints; canonical selection must not keep stale metadata merely because another album owns the lowest row ID. Partial drafts leave omitted scalars intact. Manual metadata actions use only current assets whose history row is the latest published owner of its output path; reactivating an old checksum does not establish ownership before it is exported again.

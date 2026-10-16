@@ -214,7 +214,7 @@ class CrontabService(private val sql: KSqlClient) {
                 }
                 asset {
                     allScalarFields()
-                    album()
+                    album { allScalarFields(); account { provider() } }
                 }
             })
         }
@@ -398,9 +398,21 @@ class CrontabService(private val sql: KSqlClient) {
         }
     }
 
-    private fun fetchAssetPathMapBy(crontabId: Long): Map<Asset, Path> {
+    internal fun fetchAssetPathMapBy(crontabId: Long): Map<Asset, Path> {
         val crontabHistoryDetails = sql.createQuery(CrontabHistoryDetail::class) {
-            where(table.crontabHistoryId eq crontabId)
+            where(table.crontabHistory.crontabId eq crontabId)
+            where(table.publicationStatus eq "PUBLISHED")
+            where(table.asset.currentVersion eq true)
+            // A reverted source can reactivate an old asset row before its new export
+            // succeeds. Only the latest successful owner of a path may patch it.
+            where(notExists(subQuery(CrontabHistoryDetail::class) {
+                where(table.crontabHistory.crontabId eq crontabId)
+                where(table.publicationStatus eq "PUBLISHED")
+                where(table.filePath eq parentTable.filePath)
+                where(table.id gt parentTable.id)
+                select(table)
+            }))
+            orderBy(table.id.asc())
             select(table.fetchBy {
                 asset { allTableFields() }
                 filePath()

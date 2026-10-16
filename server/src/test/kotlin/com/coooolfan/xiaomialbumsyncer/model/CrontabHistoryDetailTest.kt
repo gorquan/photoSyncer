@@ -724,6 +724,7 @@ class CrontabHistoryDetailTest {
         val detail = CrontabHistoryDetail.init(history, asset)
 
         assertEquals(false, detail.sha1Verified)
+        assertEquals(VerificationStatus.PENDING, detail.verificationStatus)
     }
 
     @Test
@@ -736,6 +737,7 @@ class CrontabHistoryDetailTest {
         val detail = CrontabHistoryDetail.init(history, asset)
 
         assertEquals(true, detail.sha1Verified)
+        assertEquals(VerificationStatus.SKIPPED, detail.verificationStatus)
     }
 
     @Test

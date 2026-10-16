@@ -10,3 +10,5 @@ export type {QrLoginStatus} from './QrLoginStatus';
 export {QrLoginStatus_CONSTANTS} from './QrLoginStatus';
 export type {RecordingType} from './RecordingType';
 export {RecordingType_CONSTANTS} from './RecordingType';
+export type {VerificationStatus} from './VerificationStatus';
+export {VerificationStatus_CONSTANTS} from './VerificationStatus';

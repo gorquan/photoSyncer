@@ -27,92 +27,85 @@ import java.util.Base64
 
 class VerificationStageTest {
     @TempDir lateinit var directory: Path
-    private val content = "original photo".toByteArray()
-    private val digest = MessageDigest.getInstance("SHA-1").digest(content)
-    private val checksums = listOf(
-        Base64.getEncoder().encodeToString(digest),
-        Base64.getEncoder().encodeToString(byteArrayOf(1) + digest),
-    )
+    private val content = byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte(), 0xda.toByte(), 0, 2, 1, 2, 0xff.toByte(), 0xd9.toByte())
+    private val sourceSha1 = java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-1").digest(content))
+    private val sha256 = java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content))
 
-    @Test fun corruptionClearsDownloadStateAndRemovesFile() {
-        checksums.forEach { checksum ->
-            withDetail(CloudProvider.ICLOUD, checksum) { sql, stage, detail ->
-                Files.writeString(Path.of(detail.filePath), "corrupted")
-                assertThrows(IllegalStateException::class.java) { stage.process(detail) }
-                val stored = sql.findById(CrontabHistoryDetail::class, detail.id)!!
-                assertFalse(stored.downloadCompleted)
-                assertFalse(stored.sha1Verified)
-                assertFalse(Files.exists(Path.of(detail.filePath)))
-            }
-        }
-    }
-
-    @Test fun validContentKeepsDownloadAndMarksVerified() {
-        checksums.forEach { checksum ->
-            withDetail(CloudProvider.ICLOUD, checksum) { sql, stage, detail ->
+    @Test fun opaqueAppleSignaturesNeverBecomeRawSha1Comparisons() {
+        listOf("opaque-provider-signature", "invalid-base64", Base64.getEncoder().encodeToString(byteArrayOf(1) + ByteArray(20))).forEach { signature ->
+            withDetail(CloudProvider.ICLOUD, signature) { sql, stage, detail ->
                 val result = stage.process(detail)
                 val stored = sql.findById(CrontabHistoryDetail::class, detail.id)!!
                 assertTrue(result.sha1Verified)
                 assertTrue(stored.downloadCompleted)
-                assertTrue(stored.sha1Verified)
+                assertEquals(VerificationStatus.TRANSPORT_VERIFIED, stored.verificationStatus)
+                assertEquals(sha256, stored.localSha256)
+                assertEquals(content.size.toLong(), stored.verifiedSize)
                 assertArrayEquals(content, Files.readAllBytes(Path.of(detail.filePath)))
             }
         }
     }
 
-    @Test fun unsupportedChecksumDoesNotDeleteFile() {
-        listOf(
-            CloudProvider.ICLOUD to "invalid-base64",
-            CloudProvider.ICLOUD to Base64.getEncoder().encodeToString(byteArrayOf(2, 3)),
-        ).forEach { (provider, checksum) ->
-            withDetail(provider, checksum) { sql, stage, detail ->
-                assertThrows(RuntimeException::class.java) { stage.process(detail) }
-                assertTrue(sql.findById(CrontabHistoryDetail::class, detail.id)!!.downloadCompleted)
-                assertArrayEquals(content, Files.readAllBytes(Path.of(detail.filePath)))
+    @Test fun xiaomiSourceSha1IsActuallyCompared() {
+        withDetail(CloudProvider.XIAOMI, sourceSha1.uppercase()) { sql, stage, detail ->
+            stage.process(detail)
+            val stored = sql.findById(CrontabHistoryDetail::class, detail.id)!!
+            assertEquals(VerificationStatus.SOURCE_VERIFIED, stored.verificationStatus)
+            assertEquals(sha256, stored.localSha256)
+        }
+    }
+
+    @Test fun equalLengthXiaomiCorruptionFailsAndRetainsExistingTarget() {
+        withDetail(CloudProvider.XIAOMI, sourceSha1) { sql, stage, detail ->
+            val corrupted = content.copyOf().also { it[6] = 42 }
+            Files.write(Path.of(detail.filePath), corrupted)
+            assertThrows(IllegalArgumentException::class.java) { stage.process(detail) }
+            assertFailed(sql, detail)
+            assertArrayEquals(corrupted, Files.readAllBytes(Path.of(detail.filePath)))
+        }
+    }
+
+    @Test fun sourceSizeMismatchFailsForBothProviders() {
+        CloudProvider.entries.forEach { provider ->
+            withDetail(provider, sourceSha1) { sql, stage, detail ->
+                Files.write(Path.of(detail.filePath), content.dropLast(1).toByteArray())
+                assertThrows(IllegalArgumentException::class.java) { stage.process(detail) }
+                assertFailed(sql, detail)
             }
         }
     }
 
-    @Test fun unreadableFileDoesNotResetDownloadState() {
-        withDetail(CloudProvider.ICLOUD, checksums.first()) { sql, stage, detail ->
+    @Test fun invalidAppleContainerFailsWithoutDeletingDestination() {
+        withDetail(CloudProvider.ICLOUD, "opaque") { sql, stage, detail ->
+            Files.write(Path.of(detail.filePath), ByteArray(content.size))
+            assertThrows(IllegalArgumentException::class.java) { stage.process(detail) }
+            assertFailed(sql, detail)
+            assertTrue(Files.exists(Path.of(detail.filePath)))
+        }
+    }
+
+    @Test fun unsupportedXiaomiChecksumCannotClaimSuccess() {
+        withDetail(CloudProvider.XIAOMI, "not-a-sha1") { sql, stage, detail ->
+            assertThrows(IllegalArgumentException::class.java) { stage.process(detail) }
+            assertFailed(sql, detail)
+        }
+    }
+
+    @Test fun missingFileClearsDownloadCompletion() {
+        withDetail(CloudProvider.XIAOMI, sourceSha1) { sql, stage, detail ->
             Files.delete(Path.of(detail.filePath))
             assertThrows(java.nio.file.NoSuchFileException::class.java) { stage.process(detail) }
-            assertTrue(sql.findById(CrontabHistoryDetail::class, detail.id)!!.downloadCompleted)
+            assertFailed(sql, detail)
         }
     }
 
-    @Test fun fileIsRemovedEvenWhenStateUpdateFails() {
-        withDetail(CloudProvider.ICLOUD, checksums.first()) { sql, stage, detail ->
-            sql.javaClient.connectionManager.execute { connection ->
-                connection.createStatement().use {
-                    it.execute("CREATE TRIGGER fail_reset BEFORE UPDATE ON crontab_history_detail BEGIN SELECT RAISE(ABORT, 'reset failed'); END")
-                }
-            }
-            Files.writeString(Path.of(detail.filePath), "corrupted")
-            val failure = assertThrows(IllegalStateException::class.java) { stage.process(detail) }
-            assertEquals(1, failure.suppressed.size)
-            assertFalse(Files.exists(Path.of(detail.filePath)))
-        }
-    }
-
-    @Test fun xiaomiSkipsChecksumAndKeepsFile() {
-        withDetail(CloudProvider.XIAOMI, "not-a-sha1") { sql, stage, detail ->
-            Files.writeString(Path.of(detail.filePath), "different content")
-            val result = stage.process(detail)
-            val stored = sql.findById(CrontabHistoryDetail::class, detail.id)!!
-            assertTrue(result.sha1Verified)
-            assertTrue(stored.sha1Verified)
-            assertTrue(stored.downloadCompleted)
-            assertEquals("different content", Files.readString(Path.of(detail.filePath)))
-        }
-    }
-
-    @Test fun xiaomiDoesNotReadFileDuringVerification() {
-        withDetail(CloudProvider.XIAOMI, "unused") { sql, stage, detail ->
-            Files.delete(Path.of(detail.filePath))
-            assertTrue(stage.process(detail).sha1Verified)
-            assertTrue(sql.findById(CrontabHistoryDetail::class, detail.id)!!.downloadCompleted)
-        }
+    private fun assertFailed(sql: KSqlClient, detail: CrontabHistoryDetail) {
+        val stored = sql.findById(CrontabHistoryDetail::class, detail.id)!!
+        assertFalse(stored.downloadCompleted)
+        assertFalse(stored.sha1Verified)
+        assertEquals(VerificationStatus.FAILED, stored.verificationStatus)
+        assertNull(stored.localSha256)
+        assertNull(stored.verifiedSize)
     }
 
     private fun withDetail(

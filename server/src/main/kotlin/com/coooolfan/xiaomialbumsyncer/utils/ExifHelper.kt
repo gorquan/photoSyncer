@@ -13,8 +13,6 @@ import kotlin.concurrent.thread
 
 fun rewriteExifTime(asset: Asset, path: Path, config: ExifRewriteConfig) {
 
-    if (path.startsWith("/tmp")) return
-
     when (asset.type) {
         AssetType.IMAGE -> rewriteImageExifTime(asset, path, config)
         AssetType.VIDEO -> rewriteVideoExifTime(asset, path, config)
@@ -23,6 +21,8 @@ fun rewriteExifTime(asset: Asset, path: Path, config: ExifRewriteConfig) {
 }
 
 fun rewriteImageExifTime(asset: Asset, path: Path, config: ExifRewriteConfig) {
+    if (inspectMotionPhoto(path).requireSafeOriginal().status == MotionPhotoStatus.NATIVE_MOTION) return
+
     //  格式为 YYYY:MM:DD HH:MM:SS 的字符串(UTC时间)
     val zoneOffset = config.timeZone.toZoneId().rules.getOffset(asset.dateTaken)
     val rewriteTagValue: String =
@@ -41,6 +41,8 @@ fun rewriteImageExifTime(asset: Asset, path: Path, config: ExifRewriteConfig) {
 }
 
 fun rewriteVideoExifTime(asset: Asset, path: Path, config: ExifRewriteConfig) {
+    if (inspectMotionPhoto(path).requireSafeOriginal().status == MotionPhotoStatus.NATIVE_MOTION) return
+
     val videoExistTagJson =
         Solon.context().objectMapper.readTree(runExifTool(config.exifToolPath, listOf("-j", "-G", path.toString())))[0]
     val needRewriteTags = VIDEO_DATA_TAG.filter {

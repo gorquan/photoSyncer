@@ -16,6 +16,17 @@ interface Asset {
     @Key
     val remoteKey: String
 
+    /** Historical versions remain for download history; only current versions are scheduled. */
+    @Default("true")
+    val currentVersion: Boolean
+
+    @Default("\"\"")
+    val logicalResourceKey: String
+
+    /** Xiaomi cloud hint only; actual dynamic structure is determined from original bytes. */
+    @Default("false")
+    val motionPhotoHint: Boolean
+
     val fileName: String
 
     val type: AssetType

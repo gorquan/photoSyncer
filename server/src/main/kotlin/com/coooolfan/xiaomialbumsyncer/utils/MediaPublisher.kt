@@ -1,0 +1,174 @@
+package com.coooolfan.xiaomialbumsyncer.utils
+
+import com.coooolfan.xiaomialbumsyncer.model.*
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardCopyOption.*
+import java.nio.file.AtomicMoveNotSupportedException
+import java.security.MessageDigest
+import java.util.UUID
+
+/** Receipt hashes describe exported bytes; archive hashes always describe unchanged cloud originals. */
+data class PublishedResource(
+    val resource: String, val source: String, val path: String, val archive: String,
+    val originalSha256: String, val outputSha256: String, val size: Long,
+    val verification: VerificationStatus, val diagnostic: String, val motionStatus: MotionPhotoStatus,
+)
+data class PublicationReceipt(
+    val group: String, val layout: String, val fingerprint: String, val complete: Boolean,
+    val outputs: List<PublishedResource>, val ownedPaths: List<String>, val ownedHashes: Map<String, String> = emptyMap(), val version: Int = MediaPublisher.VERSION,
+)
+private data class ArchivedOriginal(val source: String, val sha256: String, val size: Long)
+
+/** Filesystem transaction journal. Callers serialize publication for a task/group. */
+class MediaPublisher(private val root: Path) {
+    companion object { const val VERSION = 1 }
+    private val mapper = jacksonObjectMapper()
+
+    fun publish(
+        group: String,
+        layout: String,
+        fingerprint: String,
+        details: List<CrontabHistoryDetail>,
+        download: (Asset, Path) -> Boolean,
+        transform: (CrontabHistoryDetail, Path) -> Unit,
+        evidence: (CrontabHistoryDetail, PublishedResource) -> Unit = { _, _ -> },
+        validationFailure: (CrontabHistoryDetail, Exception) -> Unit = { _, _ -> },
+    ): PublicationReceipt {
+        require(details.isNotEmpty())
+        val absoluteRoot = canonical(root)
+        val config = details.first().crontabHistory.crontab.config
+        if (!config.targetPath.contains("${'$'}{")) require(!absoluteRoot.startsWith(canonical(Path.of(config.targetPath.trim())))) {
+            "原件存储目录必须位于照片索引目标根目录之外"
+        }
+        if (details.any { MediaIdentity.of(it.asset).liveCompanion }) require(details.any {
+            MediaIdentity.of(it.asset).role == "resOriginal" && it.asset.type == AssetType.IMAGE
+        }) { "实况照片缺少主图片，资源组尚未发布" }
+        details.forEach {
+            val output = Path.of(it.filePath).toAbsolutePath().normalize()
+            require(!absoluteRoot.startsWith(output.parent)) { "原件存储目录必须位于照片索引目标目录之外" }
+        }
+        Files.createDirectories(absoluteRoot)
+        val receiptPath = absoluteRoot.resolve("receipts/${hash(group + layout)}.json")
+        val previous = read<PublicationReceipt>(receiptPath)?.takeIf { it.group == group && it.layout == layout && it.version == VERSION }
+        // Existence alone is never sufficient. Check final bytes on every run, even for completed history.
+        if (config.skipExistingFile && previous?.complete == true && previous.fingerprint == fingerprint &&
+            previous.outputs.size == details.size && previous.outputs.all {
+                matches(Path.of(it.path), it.outputSha256) && matches(Path.of(it.archive), it.originalSha256) &&
+                    (!config.rewriteFileSystemTime || Files.getLastModifiedTime(Path.of(it.path)).toInstant() ==
+                        details.first { detail -> detail.filePath == it.path }.asset.dateTaken)
+            }) {
+            previous.outputs.forEach { output -> evidence(details.first { it.filePath == output.path }, output) }
+            return previous
+        }
+        val work = absoluteRoot.resolve("work/${UUID.randomUUID()}")
+        Files.createDirectories(work)
+        try {
+            val prepared = details.mapIndexed { index, detail ->
+                val asset = detail.asset
+                val identity = MediaIdentity.of(asset)
+                val source = mapper.writeValueAsString(listOf(identity.resourceKey, asset.checksum, asset.size, asset.mimeType))
+                val archive = absoluteRoot.resolve("originals/${hash(source)}.original")
+                val archiveReceipt = archive.resolveSibling("${archive.fileName}.json")
+                var known = read<ArchivedOriginal>(archiveReceipt)?.takeIf { it.source == source && matches(archive, it.sha256) }
+                if (known == null) {
+                    val temp = work.resolve("download-$index")
+                    require(download(asset, temp)) { "云端原件暂不可用，资源组尚未发布" }
+                    val (digest, _, _) = validateOriginal(detail, temp, null, validationFailure)
+                    Files.createDirectories(archive.parent)
+                    atomicMove(temp, archive)
+                    known = ArchivedOriginal(source, digest.sha256, digest.size)
+                    write(archiveReceipt, known)
+                }
+                // A changed verification setting rechecks archived bytes, without another transfer.
+                val (digest, status, motion) = validateOriginal(detail, archive, known.sha256, validationFailure)
+                val copy = work.resolve("export-$index.${Path.of(detail.filePath).fileName.toString().substringAfterLast('.', "bin")}")
+                Files.copy(archive, copy, REPLACE_EXISTING)
+                transform(detail, copy)
+                validateOriginalContainer(copy, asset.mimeType)
+                inspectMotionPhoto(copy, asset.motionPhotoHint).requireSafeOriginal()
+                val output = PublishedResource(identity.resourceKey, source, detail.filePath, archive.toString(), digest.sha256,
+                    fileHash(copy), digest.size, status, motion.diagnostic, motion.status)
+                evidence(detail, output)
+                copy to output
+            }
+            val outputs = prepared.map { it.second }
+            val owned = (previous?.ownedPaths.orEmpty() + previous?.outputs.orEmpty().map { it.path } + outputs.map { it.path }).distinct()
+            val ownedHashes = previous?.ownedHashes.orEmpty() + previous?.outputs.orEmpty().associate { it.path to it.outputSha256 } + outputs.associate { it.path to it.outputSha256 }
+            val pending = PublicationReceipt(group, layout, fingerprint, false, outputs, owned, ownedHashes)
+            // Persist before the first rename: interruption/DB failure remains repairable next run.
+            write(receiptPath, pending)
+            prepared.sortedBy { (_, output) -> if (output.resource.endsWith("/resOriginalVidCompl")) 0 else 1 }.forEach { (copy, output) ->
+                val target = Path.of(output.path).toAbsolutePath().normalize()
+                Files.createDirectories(target.parent)
+                val sibling = target.resolveSibling(".${target.fileName}.photosyncer-${UUID.randomUUID()}.tmp")
+                try {
+                    Files.copy(copy, sibling, REPLACE_EXISTING)
+                    require(matches(sibling, output.outputSha256)) { "发布副本 SHA-256 不匹配" }
+                    // Preserve requested filesystem timestamps on the exported file.
+                    if (config.rewriteFileSystemTime) {
+                        rewriteFSTime(sibling, details.first { it.filePath == output.path }.asset.dateTaken)
+                    } else Files.setLastModifiedTime(sibling, Files.getLastModifiedTime(copy))
+                    atomicMove(sibling, target)
+                } finally { Files.deleteIfExists(sibling) }
+            }
+            // Only receipt-owned obsolete exports in this exact layout are eligible for removal.
+            owned.filter { old -> outputs.none { it.path == old } }.forEach { old ->
+                val path = Path.of(old)
+                if (Files.exists(path)) {
+                    require(ownedHashes[old]?.let { matches(path, it) } == true) { "旧导出文件已被外部修改，保留该文件，请检查后重试" }
+                    Files.delete(path)
+                }
+            }
+            val completed = pending.copy(complete = true, ownedPaths = outputs.map { it.path }, ownedHashes = outputs.associate { it.path to it.outputSha256 })
+            write(receiptPath, completed)
+            return completed
+        } finally {
+            Files.walk(work).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists) }
+        }
+    }
+
+    private fun validateOriginal(
+        detail: CrontabHistoryDetail, path: Path, expectedHash: String?,
+        failed: (CrontabHistoryDetail, Exception) -> Unit,
+    ): Triple<OriginalDigests, VerificationStatus, MotionPhotoInspection> = try {
+        val digest = digestOriginal(path, detail.asset.size)
+        require(expectedHash == null || digest.sha256 == expectedHash) { "保留原件的 SHA-256 不匹配" }
+        validateOriginalContainer(path, detail.asset.mimeType)
+        val motion = inspectMotionPhoto(path, detail.asset.motionPhotoHint).requireSafeOriginal()
+        Triple(digest, verifySource(detail.asset, detail.crontabHistory.crontab.config, digest), motion)
+    } catch (failure: Exception) {
+        try { failed(detail, failure) } catch (persistFailure: Exception) { failure.addSuppressed(persistFailure) }
+        throw failure
+    }
+
+    private fun canonical(path: Path): Path {
+        val absolute = path.toAbsolutePath().normalize()
+        var existing = absolute
+        while (!Files.exists(existing)) existing = existing.parent ?: return absolute
+        return existing.toRealPath().resolve(existing.relativize(absolute)).normalize()
+    }
+
+    private fun verifySource(asset: Asset, config: CrontabConfig, digest: OriginalDigests): VerificationStatus {
+        if (!config.checkSha1) return VerificationStatus.SKIPPED
+        if (asset.album.account.provider == CloudProvider.ICLOUD) return VerificationStatus.TRANSPORT_VERIFIED
+        require(asset.checksum.matches(Regex("[a-fA-F0-9]{40}")) && digest.sha1.equals(asset.checksum, true)) { "小米云文件 SHA-1 不匹配" }
+        return VerificationStatus.SOURCE_VERIFIED
+    }
+    private inline fun <reified T> read(path: Path): T? = if (Files.isRegularFile(path)) runCatching { mapper.readValue<T>(Files.readString(path)) }.getOrNull() else null
+    private fun write(path: Path, value: Any) {
+        Files.createDirectories(path.parent)
+        val temp = path.resolveSibling("${path.fileName}.${UUID.randomUUID()}.tmp")
+        try { Files.writeString(temp, mapper.writeValueAsString(value)); atomicMove(temp, path) }
+        finally { Files.deleteIfExists(temp) }
+    }
+    private fun matches(path: Path, digest: String): Boolean = Files.isRegularFile(path) && runCatching { fileHash(path) == digest }.getOrDefault(false)
+    private fun fileHash(path: Path): String = digestOriginal(path, Files.size(path)).sha256
+    private fun hash(value: String): String = java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value.toByteArray()))
+    private fun atomicMove(from: Path, to: Path) {
+        try { Files.move(from, to, ATOMIC_MOVE, REPLACE_EXISTING) }
+        catch (_: AtomicMoveNotSupportedException) { Files.move(from, to, REPLACE_EXISTING) }
+    }
+}

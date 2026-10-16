@@ -213,9 +213,9 @@ const lastRunStatus = computed(() => {
   if (!h) return null
   if (h.isCompleted)
     return {
-      label: t('schedule.status.completed'),
-      class: 'text-emerald-700 dark:text-emerald-400',
-      dot: 'bg-emerald-500',
+      label: t('schedule.status.finished'),
+      class: 'text-slate-600 dark:text-slate-400',
+      dot: 'bg-slate-400',
     }
   if (!h.endTime)
     return {
@@ -797,9 +797,9 @@ onUnmounted(() => {
                     }}
                   </span>
                   <Tag
-                    :severity="g.runCount > 1 ? 'secondary' : g.endTime ? 'success' : 'info'"
+                    :severity="g.endTime ? 'secondary' : 'info'"
                     :value="
-                      g.endTime ? t('schedule.status.completed') : t('schedule.status.running')
+                      g.endTime ? t('schedule.status.finished') : t('schedule.status.running')
                     "
                     class="!h-6 !px-2 !text-[13px]"
                   />

@@ -30,6 +30,7 @@ interface CrontabHistory {
 
     val fetchedAllAssets: Boolean
 
+    /** Execution ended, including handled failures; details.publicationStatus is export evidence. */
     @Formula(dependencies = ["endTime"])
     val isCompleted: Boolean
         get() = endTime != null
