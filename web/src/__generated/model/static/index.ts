@@ -1,6 +1,7 @@
 export type {AuthenticatorAssertionResponse} from './AuthenticatorAssertionResponse';
 export type {AuthenticatorAttestationResponse} from './AuthenticatorAttestationResponse';
 export type {AuthenticatorSelection} from './AuthenticatorSelection';
+export type {CloudDeletionReport} from './CloudDeletionReport';
 export type {CredentialDescriptor} from './CredentialDescriptor';
 export type {CrontabConfig} from './CrontabConfig';
 export type {CrontabCreateInput} from './CrontabCreateInput';
@@ -15,6 +16,7 @@ export type {IsInitResponse} from './IsInitResponse';
 export type {McpTokenCreateRequest} from './McpTokenCreateRequest';
 export type {McpTokenCreatedResponse} from './McpTokenCreatedResponse';
 export type {McpTokenInfo} from './McpTokenInfo';
+export type {MediaDeletionResult} from './MediaDeletionResult';
 export type {MountPathCheckRequest} from './MountPathCheckRequest';
 export type {MountPathCheckResponse} from './MountPathCheckResponse';
 export type {NotifyConfig} from './NotifyConfig';

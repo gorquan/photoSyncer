@@ -11,7 +11,26 @@ import java.nio.file.Path
 
 @Managed
 class MediaPublicationService(private val sql: KSqlClient, private val media: CloudMediaService) {
-    fun process(details: List<CrontabHistoryDetail>, systemConfig: SystemConfig) {
+    fun process(details: List<CrontabHistoryDetail>, systemConfig: SystemConfig) =
+        MediaFileLocks.group(MediaIdentity.of(details.first().asset).groupKey) {
+            val ids = details.map { it.asset.id }.distinct()
+            val present = ids.chunked(200).flatMap { batch -> sql.executeQuery(Asset::class) {
+                where(table.id valueIn batch)
+                select(table.id, table.cloudDeleted)
+            } }
+            if (present.size != ids.size || present.any { it._2 }) {
+                val reason = "云端资源已删除或不可用，取消发布，等待删除同步"
+                sql.executeUpdate(CrontabHistoryDetail::class) {
+                    set(table.publicationStatus, "FAILED")
+                    set(table.message, reason)
+                    where(table.id valueIn details.map { it.id })
+                }
+                throw IllegalArgumentException(reason)
+            }
+            processLocked(details, systemConfig)
+        }
+
+    private fun processLocked(details: List<CrontabHistoryDetail>, systemConfig: SystemConfig) {
         val task = details.first().crontabHistory.crontab
         val config = task.config
         val identity = MediaIdentity.of(details.first().asset)
@@ -19,9 +38,7 @@ class MediaPublicationService(private val sql: KSqlClient, private val media: Cl
         val fingerprint = jacksonObjectMapper().writeValueAsString(listOf(MediaPublisher.VERSION, config,
             systemConfig.exifToolPath, details.map { listOf(it.asset.remoteKey, it.asset.checksum, it.asset.size,
                 it.asset.dateTaken.toString(), it.asset.mimeType, it.asset.motionPhotoHint, it.filePath) }))
-        val db = Path.of(System.getenv("APP_DB_PATH") ?: "./db/xiaomialbumsyncer.db").toAbsolutePath()
-        val root = System.getenv("PHOTO_SYNCER_MEDIA_ROOT")?.takeIf { it.isNotBlank() }?.let(Path::of)
-            ?: db.parent.resolve("media")
+        val root = mediaStorageRoot()
         try {
             sql.executeUpdate(CrontabHistoryDetail::class) {
                 set(table.publicationStatus, "PREPARING")

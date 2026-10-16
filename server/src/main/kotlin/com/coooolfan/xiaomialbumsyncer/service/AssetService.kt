@@ -277,11 +277,13 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
             where(table.albumId valueIn crontab.albumIds)
             where(table.id gt lastId)
             where(table.currentVersion eq true)
+            where(table.cloudDeleted eq false)
             if (crontab.config.synologyPhotos) {
                 // Choose one membership before checking download history, stable across pages/runs.
                 where(notExists(subQuery(Asset::class) {
                     where(table.albumId valueIn crontab.albumIds)
                     where(table.currentVersion eq true)
+                    where(table.cloudDeleted eq false)
                     where(table.logicalResourceKey ne "")
                     where(table.logicalResourceKey eq parentTable.logicalResourceKey)
                     where(table.id lt parentTable.id)
@@ -319,16 +321,19 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
 
     /** At most one current membership per selected resource; group size is bounded by provider roles. */
     fun publicationGroup(crontab: Crontab, asset: Asset): List<Asset> {
+        if (asset.cloudDeleted) return emptyList()
         val identity = com.coooolfan.xiaomialbumsyncer.utils.MediaIdentity.of(asset)
         if (identity.provider != CloudProvider.ICLOUD) return listOf(asset)
         val keys = listOf("resOriginal", "resOriginalAlt", "resOriginalVidCompl").map { "${identity.groupKey}/$it" }
         val rows = sql.createQuery(Asset::class) {
             where(table.albumId valueIn if (crontab.config.synologyPhotos) crontab.albumIds else listOf(asset.album.id))
             where(table.currentVersion eq true)
+            where(table.cloudDeleted eq false)
             where(table.logicalResourceKey valueIn keys)
             where(notExists(subQuery(Asset::class) {
                 where(table.albumId valueIn if (crontab.config.synologyPhotos) crontab.albumIds else listOf(asset.album.id))
                 where(table.currentVersion eq true)
+                where(table.cloudDeleted eq false)
                 where(table.logicalResourceKey eq parentTable.logicalResourceKey)
                 where(table.id lt parentTable.id)
                 select(table)

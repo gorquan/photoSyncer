@@ -306,7 +306,9 @@ data class CrontabHistoryGroup(
     val startTime: Instant,
     val endTime: Instant?,
     val runCount: Long,
-    val detailsCount: Long
+    val detailsCount: Long,
+    val executionStatus: String?,
+    val deletionReport: com.coooolfan.xiaomialbumsyncer.model.CloudDeletionReport?,
 )
 
 data class CrontabCurrentStats(

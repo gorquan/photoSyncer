@@ -205,12 +205,24 @@ function openHistoryGroup(g: CrontabHistoryGroup) {
     fetchedAllAssets: true,
     isCompleted: g.endTime != null,
     detailsCount: g.detailsCount,
+    executionStatus: g.executionStatus,
+    deletionReport: g.deletionReport,
   })
 }
 
 const lastRunStatus = computed(() => {
   const h = lastHistory.value
   if (!h) return null
+  if (
+    h.executionStatus === 'FAILED' ||
+    h.executionStatus === 'PARTIAL' ||
+    h.executionStatus === 'CANCELLED'
+  )
+    return {
+      label: t(`schedule.status.${h.executionStatus}`),
+      class: 'text-amber-700 dark:text-amber-400',
+      dot: 'bg-amber-500',
+    }
   if (h.isCompleted)
     return {
       label: t('schedule.status.finished'),
@@ -782,7 +794,13 @@ onUnmounted(() => {
                 <div class="flex min-w-0 items-center gap-2">
                   <span
                     class="h-1.5 w-1.5 shrink-0 rounded-full"
-                    :class="g.endTime ? 'bg-emerald-500' : 'bg-blue-500'"
+                    :class="
+                      g.executionStatus === 'SUCCESS'
+                        ? 'bg-emerald-500'
+                        : g.endTime
+                          ? 'bg-slate-400'
+                          : 'bg-blue-500'
+                    "
                   />
                   <span class="truncate text-[13px] text-slate-700 dark:text-slate-200">
                     {{ formatTime(g.startTime) }} → {{ formatTime(g.endTime) }}
@@ -799,7 +817,11 @@ onUnmounted(() => {
                   <Tag
                     :severity="g.endTime ? 'secondary' : 'info'"
                     :value="
-                      g.endTime ? t('schedule.status.finished') : t('schedule.status.running')
+                      g.executionStatus
+                        ? t(`schedule.status.${g.executionStatus}`)
+                        : g.endTime
+                          ? t('schedule.status.finished')
+                          : t('schedule.status.running')
                     "
                     class="!h-6 !px-2 !text-[13px]"
                   />

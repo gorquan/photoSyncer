@@ -21,4 +21,8 @@ export interface CrontabConfig {
      * Use targetPath as a literal root, with account/zone isolated, album-independent files.
      */
     readonly synologyPhotos: boolean;
+    /**
+     * Permanently remove owned exports and originals after authoritative cloud deletion.
+     */
+    readonly syncCloudDeletes: boolean;
 }

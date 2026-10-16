@@ -20,7 +20,7 @@ data class PublicationReceipt(
     val group: String, val layout: String, val fingerprint: String, val complete: Boolean,
     val outputs: List<PublishedResource>, val ownedPaths: List<String>, val ownedHashes: Map<String, String> = emptyMap(), val version: Int = MediaPublisher.VERSION,
 )
-private data class ArchivedOriginal(val source: String, val sha256: String, val size: Long)
+internal data class ArchivedOriginal(val source: String, val sha256: String, val size: Long)
 
 /** Filesystem transaction journal. Callers serialize publication for a task/group. */
 class MediaPublisher(private val root: Path) {
@@ -36,6 +36,18 @@ class MediaPublisher(private val root: Path) {
         transform: (CrontabHistoryDetail, Path) -> Unit,
         evidence: (CrontabHistoryDetail, PublishedResource) -> Unit = { _, _ -> },
         validationFailure: (CrontabHistoryDetail, Exception) -> Unit = { _, _ -> },
+    ): PublicationReceipt {
+        require(details.isNotEmpty())
+        return MediaFileLocks.group(MediaIdentity.of(details.first().asset).groupKey) {
+            publishLocked(group, layout, fingerprint, details, download, transform, evidence, validationFailure)
+        }
+    }
+
+    private fun publishLocked(
+        group: String, layout: String, fingerprint: String, details: List<CrontabHistoryDetail>,
+        download: (Asset, Path) -> Boolean, transform: (CrontabHistoryDetail, Path) -> Unit,
+        evidence: (CrontabHistoryDetail, PublishedResource) -> Unit,
+        validationFailure: (CrontabHistoryDetail, Exception) -> Unit,
     ): PublicationReceipt {
         require(details.isNotEmpty())
         val absoluteRoot = canonical(root)
@@ -94,37 +106,39 @@ class MediaPublisher(private val root: Path) {
                 evidence(detail, output)
                 copy to output
             }
-            val outputs = prepared.map { it.second }
-            val owned = (previous?.ownedPaths.orEmpty() + previous?.outputs.orEmpty().map { it.path } + outputs.map { it.path }).distinct()
-            val ownedHashes = previous?.ownedHashes.orEmpty() + previous?.outputs.orEmpty().associate { it.path to it.outputSha256 } + outputs.associate { it.path to it.outputSha256 }
-            val pending = PublicationReceipt(group, layout, fingerprint, false, outputs, owned, ownedHashes)
-            // Persist before the first rename: interruption/DB failure remains repairable next run.
-            write(receiptPath, pending)
-            prepared.sortedBy { (_, output) -> if (output.resource.endsWith("/resOriginalVidCompl")) 0 else 1 }.forEach { (copy, output) ->
-                val target = Path.of(output.path).toAbsolutePath().normalize()
-                Files.createDirectories(target.parent)
-                val sibling = target.resolveSibling(".${target.fileName}.photosyncer-${UUID.randomUUID()}.tmp")
-                try {
-                    Files.copy(copy, sibling, REPLACE_EXISTING)
-                    require(matches(sibling, output.outputSha256)) { "发布副本 SHA-256 不匹配" }
-                    // Preserve requested filesystem timestamps on the exported file.
-                    if (config.rewriteFileSystemTime) {
-                        rewriteFSTime(sibling, details.first { it.filePath == output.path }.asset.dateTaken)
-                    } else Files.setLastModifiedTime(sibling, Files.getLastModifiedTime(copy))
-                    atomicMove(sibling, target)
-                } finally { Files.deleteIfExists(sibling) }
-            }
-            // Only receipt-owned obsolete exports in this exact layout are eligible for removal.
-            owned.filter { old -> outputs.none { it.path == old } }.forEach { old ->
-                val path = Path.of(old)
-                if (Files.exists(path)) {
-                    require(ownedHashes[old]?.let { matches(path, it) } == true) { "旧导出文件已被外部修改，保留该文件，请检查后重试" }
-                    Files.delete(path)
+            return MediaFileLocks.ownership {
+                val outputs = prepared.map { it.second }
+                val owned = (previous?.ownedPaths.orEmpty() + previous?.outputs.orEmpty().map { it.path } + outputs.map { it.path }).distinct()
+                val ownedHashes = previous?.ownedHashes.orEmpty() + previous?.outputs.orEmpty().associate { it.path to it.outputSha256 } + outputs.associate { it.path to it.outputSha256 }
+                val pending = PublicationReceipt(group, layout, fingerprint, false, outputs, owned, ownedHashes)
+                // Persist before the first rename: interruption/DB failure remains repairable next run.
+                write(receiptPath, pending)
+                prepared.sortedBy { (_, output) -> if (output.resource.endsWith("/resOriginalVidCompl")) 0 else 1 }.forEach { (copy, output) ->
+                    val target = Path.of(output.path).toAbsolutePath().normalize()
+                    Files.createDirectories(target.parent)
+                    val sibling = target.resolveSibling(".${target.fileName}.photosyncer-${UUID.randomUUID()}.tmp")
+                    try {
+                        Files.copy(copy, sibling, REPLACE_EXISTING)
+                        require(matches(sibling, output.outputSha256)) { "发布副本 SHA-256 不匹配" }
+                        // Preserve requested filesystem timestamps on the exported file.
+                        if (config.rewriteFileSystemTime) {
+                            rewriteFSTime(sibling, details.first { it.filePath == output.path }.asset.dateTaken)
+                        } else Files.setLastModifiedTime(sibling, Files.getLastModifiedTime(copy))
+                        atomicMove(sibling, target)
+                    } finally { Files.deleteIfExists(sibling) }
                 }
+                // Only receipt-owned obsolete exports in this exact layout are eligible for removal.
+                owned.filter { old -> outputs.none { it.path == old } }.forEach { old ->
+                    val path = Path.of(old)
+                    if (Files.exists(path)) {
+                        require(ownedHashes[old]?.let { matches(path, it) } == true) { "旧导出文件已被外部修改，保留该文件，请检查后重试" }
+                        Files.delete(path)
+                    }
+                }
+                val completed = pending.copy(complete = true, ownedPaths = outputs.map { it.path }, ownedHashes = outputs.associate { it.path to it.outputSha256 })
+                write(receiptPath, completed)
+                completed
             }
-            val completed = pending.copy(complete = true, ownedPaths = outputs.map { it.path }, ownedHashes = outputs.associate { it.path to it.outputSha256 })
-            write(receiptPath, completed)
-            return completed
         } finally {
             Files.walk(work).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists) }
         }

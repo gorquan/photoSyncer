@@ -126,6 +126,8 @@ class XasQueryService(
                     startTime = history.startTime.toString(),
                     endTime = history.endTime?.toString(),
                     isCompleted = history.isCompleted,
+                    executionStatus = history.executionStatus,
+                    deletionReport = history.deletionReport,
                     detailsCount = history.detailsCount,
                 )
             },
@@ -155,6 +157,8 @@ class XasQueryService(
                 startTime = history.startTime.toString(),
                 endTime = history.endTime?.toString(),
                 isCompleted = history.isCompleted,
+                    executionStatus = history.executionStatus,
+                    deletionReport = history.deletionReport,
             ),
             totalCount = page.totalRowCount,
             pageIndex = pageIndex,

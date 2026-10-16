@@ -428,6 +428,13 @@ watch(
               <span>{{ t('cronform.toggle.synologyPhotos') }}</span>
             </label>
             <p class="text-[12px] text-slate-500">{{ t('cronform.toggle.synologyPhotosHint') }}</p>
+            <label class="flex items-center gap-2">
+              <Checkbox v-model="form.config.syncCloudDeletes" binary />
+              <span>{{ t('cronform.toggle.syncCloudDeletes') }}</span>
+            </label>
+            <p class="text-[12px] text-slate-500">
+              {{ t('cronform.toggle.syncCloudDeletesHint') }}
+            </p>
 
             <div class="space-y-2">
               <div class="flex items-center justify-between">

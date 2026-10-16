@@ -77,7 +77,7 @@ class XiaoMiApi(private val tokenManager: TokenManager) {
      * 流式获取相册资源，每获取一页就调用 handler 处理，避免大相册内存溢出
      * @return 总资源数量
      */
-    fun fetchAssetsByAlbumId(album: Album, day: LocalDate? = null, handler: (List<Asset>) -> Unit): Long {
+    fun fetchAssetsByAlbumId(album: Album, day: LocalDate? = null, strict: Boolean = false, handler: (List<Asset>) -> Unit): Long {
         var totalCount = 0L
         var pageNum = 0
         var hasMorePages = true
@@ -86,6 +86,7 @@ class XiaoMiApi(private val tokenManager: TokenManager) {
         val urlDayParams =
             if (day == null) "" else "&startDate=${day.format(BASIC_ISO_DATE)}&endDate=${day.format(BASIC_ISO_DATE)}"
 
+        val seen = mutableSetOf<String>()
         while (hasMorePages) {
             val url =
                 if (album.isAudioAlbum())
@@ -101,10 +102,13 @@ class XiaoMiApi(private val tokenManager: TokenManager) {
                 else
                     responseTree.at("/data/galleries")
 
+            if (strict) validateAssetEnumerationPage(responseTree, album.isAudioAlbum(), pageSize)
+
             log.info("解析用户 ${album.accountId} 的相册 ${album.name} ID=${album.remoteKey}${if (day != null) " day=$day" else ""} 第 ${pageNum + 1} 页数据，此页共 ${assetArrayJson.size()} 个资源")
 
             // 处理当前页数据
             val pageAssets = assetArrayJson.map { parseJsonNode(it, album) }
+            if (strict) require(pageAssets.all { seen.add(it.remoteKey) }) { "小米资产分页重复，请重试同步" }
 
             // 立即处理这一页，避免累积
             handler(pageAssets)
@@ -177,6 +181,37 @@ class XiaoMiApi(private val tokenManager: TokenManager) {
             lastPage = data.path("lastPage").asBoolean(true),
             assets = assets,
         )
+    }
+
+    /** Current recycle-bin contents are library deletion evidence, not album membership changes. */
+    fun fetchDeletedGalleryIds(accountId: Long): Set<String> {
+        val ids = mutableSetOf<String>()
+        val seenTags = mutableSetOf("0")
+        var tag = "0"
+        do {
+            val response = getJson(accountId, apiProperties.url(
+                "gallery/deleted_v2?ts=${System.currentTimeMillis()}&maxTag=$tag&limit=50"))
+            val page = parseDeletedGalleryPage(response)
+            require(page.ids.none { it in ids }) { "小米回收站分页重复记录" }
+            ids += page.ids
+            if (page.lastPage) return ids
+            require(seenTags.add(page.syncTag)) { "小米回收站分页位点没有推进" }
+            tag = page.syncTag
+        } while (true)
+    }
+
+    /** A successful storage URL proves presence; unavailable storage alone never proves deletion. */
+    fun probeGalleryPresence(accountId: Long, remoteKey: String): com.coooolfan.xiaomialbumsyncer.model.CloudPresence {
+        val id = remoteKey.toLongOrNull() ?: error("小米资产标识无效")
+        return try {
+            parseGalleryPresence(getJson(accountId,
+                apiProperties.url("gallery/storage?ts=${System.currentTimeMillis()}&id=$id")))
+        } catch (error: IllegalStateException) {
+            if (error.message?.contains("业务错误码 50050") == true) {
+                throw IllegalStateException("无法确认云端删除（小米错误码 50050），本次保留本地文件", error)
+            }
+            throw error
+        }
     }
 
     fun downloadAsset(accountId: Long, asset: Asset, targetPath: Path): Boolean {
@@ -337,4 +372,50 @@ internal fun hasXiaomiMotionHint(description: JsonNode?): Boolean {
         else -> return false
     }.split(':').filter { it.isNotEmpty() }.toSet()
     return "1006" in flags || ("1073" in flags && "1065" in flags)
+}
+
+internal data class DeletedGalleryPage(val ids: Set<String>, val lastPage: Boolean, val syncTag: String)
+
+internal fun parseDeletedGalleryPage(response: JsonNode): DeletedGalleryPage {
+    response.throwIfBizError()
+    val data = response.path("data")
+    val content = data.path("content")
+    val last = data.path("lastPage")
+    val tag = data.path("syncTag")
+    require(content.isArray && last.isBoolean && (tag.isTextual || tag.isIntegralNumber) && tag.asText().matches(Regex("[0-9]+"))) {
+        "小米回收站分页响应不完整"
+    }
+    require(last.asBoolean() || !content.isEmpty) { "小米回收站非末页为空" }
+    val ids = content.map { item ->
+        val id = item.path("id")
+        val deletedAt = item.path("deleteTime")
+        require(item.path("status").asText() == "deleted" &&
+            (id.isTextual || id.isIntegralNumber) && id.asText().toLongOrNull()?.let { it > 0 } == true &&
+            deletedAt.isIntegralNumber && deletedAt.canConvertToLong() && deletedAt.asLong() > 0) {
+            "小米回收站记录缺少明确删除证据"
+        }
+        id.asText()
+    }
+    require(ids.size == ids.toSet().size) { "小米回收站页包含重复记录" }
+    return DeletedGalleryPage(ids.toSet(), last.asBoolean(), tag.asText())
+}
+
+internal fun parseGalleryPresence(response: JsonNode): CloudPresence {
+    response.throwIfBizError()
+    val url = response.at("/data/url").takeIf { it.isTextual }?.asText()
+    val uri = runCatching { java.net.URI(url ?: "") }.getOrNull()
+    require(uri != null && uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank()) {
+        "小米资产状态查询缺少有效地址，无法判断是否删除"
+    }
+    return CloudPresence.LIVE
+}
+
+internal fun validateAssetEnumerationPage(response: JsonNode, audio: Boolean, pageSize: Int) {
+    response.throwIfBizError()
+    val content = response.at(if (audio) "/data/list" else "/data/galleries")
+    require(content.isArray && content.size() <= pageSize) { "小米资产分页响应不完整" }
+    if (!audio) {
+        val last = response.at("/data/isLastPage")
+        require(last.isBoolean && (last.asBoolean() || !content.isEmpty)) { "小米资产分页结束状态无效" }
+    }
 }

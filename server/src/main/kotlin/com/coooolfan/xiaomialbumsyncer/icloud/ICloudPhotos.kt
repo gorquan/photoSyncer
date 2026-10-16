@@ -81,9 +81,9 @@ class ICloudPhotos(private val accounts: ICloudAccountService) {
             }
         }
 
-    fun fetchAssets(album: Album, handler: (List<Asset>) -> Unit): Long = accounts.withClient(album.accountId) { fetchAssets(album, it, handler) }
+    fun fetchAssets(album: Album, handler: (List<Asset>) -> Unit): Long = accounts.withClient(album.accountId) { fetchAssets(album, it, handler = handler) }
 
-    internal fun fetchAssets(album: Album, client: ICloudClient, handler: (List<Asset>) -> Unit): Long {
+    internal fun fetchAssets(album: Album, client: ICloudClient, strict: Boolean = false, handler: (List<Asset>) -> Unit): Long {
         val ref = ICloudAlbumKey.decode(album.remoteKey)
         checkIndex(client, ref.zone)
         var rank = 0L
@@ -96,6 +96,7 @@ class ICloudPhotos(private val accounts: ICloudAccountService) {
             else if (!ref.albumId.startsWith("__")) filters += filter("parentId", "STRING", ref.albumId)
             val page = client.cloud("records/query", mapOf("query" to mapOf("recordType" to ref.queryType(), "filterBy" to filters),
                 "resultsLimit" to 200, "zoneID" to zoneId(ref.zone)))
+            if (strict) validateICloudEnumerationPage(page)
             val records = page.path("records").toList()
             val assets = records.filter { it.path("recordType").asText() == "CPLAsset" }
             if (assets.isEmpty()) break
@@ -115,6 +116,15 @@ class ICloudPhotos(private val accounts: ICloudAccountService) {
         }
         return total
     }
+
+    fun fetchAssetsForDeletionCheck(album: Album, handler: (List<Asset>) -> Unit): Long =
+        accounts.withClient(album.accountId) { fetchAssets(album, it, strict = true, handler = handler) }
+
+    fun probePresence(accountId: Long, zone: String, recordName: String): CloudPresence =
+        accounts.withClient(accountId) { client ->
+            parseICloudPresence(client.cloud("records/lookup", mapOf("zoneID" to zoneId(zone),
+                "records" to listOf(mapOf("recordName" to recordName)))), recordName)
+        }
 
     fun fetchIncremental(albums: List<Album>, cursor: String?, handler: (List<Asset>) -> Unit, commitCursor: (String) -> Unit) {
         require(albums.isNotEmpty())
@@ -260,4 +270,50 @@ internal fun requireResolvedResourceVersion(resource: JsonNode, asset: Asset) {
     require(resource.path("fileChecksum").asText() == asset.checksum && resource.path("size").asLong(-1) == asset.size) {
         "iCloud 来源版本已变化，请刷新相册后重试"
     }
+}
+
+/** Only a complete requested-record response may establish library presence/deletion. */
+internal fun parseICloudPresence(response: JsonNode, recordName: String): CloudPresence {
+    require(response.path("serverErrorCode").asText().isBlank()) { "iCloud 资产状态查询失败" }
+    val records = response.path("records")
+    require(records.isArray && records.size() == 1 && records[0].path("recordName").asText() == recordName) {
+        "iCloud 资产状态查询响应不完整"
+    }
+    val record = records[0]
+    val error = record.path("serverErrorCode").asText()
+    if (error in setOf("NOT_FOUND", "UNKNOWN_ITEM")) return CloudPresence.DELETED
+    require(error.isBlank()) { "iCloud 资产状态查询失败：$error" }
+    if (iCloudDeletionFlag(record.path("deleted")) || iCloudDeletionFlag(field(record, "isDeleted")) ||
+        iCloudDeletionFlag(field(record, "isExpunged"))) return CloudPresence.DELETED
+    require(record.path("recordType").asText() == "CPLAsset" && record.path("fields").isObject &&
+        field(record, "masterRef").path("recordName").asText().isNotBlank()) {
+        "iCloud 资产状态查询没有明确的有效记录"
+    }
+    return CloudPresence.LIVE
+}
+
+private fun iCloudDeletionFlag(flag: JsonNode): Boolean {
+    if (flag.isMissingNode || flag.isNull) return false
+    require(flag.isBoolean || flag.isIntegralNumber && flag.asLong() in 0L..1L) { "iCloud 删除标识无效" }
+    return flag.asBoolean()
+}
+
+internal fun validateICloudEnumerationPage(page: JsonNode) {
+    require(page.path("serverErrorCode").asText().isBlank() && page.path("records").isArray) {
+        "iCloud 资产分页响应不完整"
+    }
+    val records = page.path("records")
+    require(page.path("continuationMarker").isMissingNode || page.path("continuationMarker").isNull) {
+        "iCloud 资产分页返回未知的续页方式，无法确认完整性"
+    }
+    require(records.all { record ->
+        record.path("serverErrorCode").asText().isBlank() && record.path("recordName").asText().isNotBlank() &&
+            record.path("recordType").asText() in setOf("CPLAsset", "CPLMaster", "CPLContainerRelation")
+    }) { "iCloud 资产分页包含无效记录" }
+    require(records.isEmpty || records.any { it.path("recordType").asText() == "CPLAsset" }) {
+        "iCloud 资产分页缺少资产记录，无法确认扫描结束"
+    }
+    // A tombstone in a live query is not a live observation; a fresh direct lookup must decide it.
+    require(records.none { iCloudDeletionFlag(it.path("deleted")) || iCloudDeletionFlag(field(it, "isDeleted")) ||
+        iCloudDeletionFlag(field(it, "isExpunged")) }) { "iCloud 活跃资产分页包含删除记录，请重试同步" }
 }

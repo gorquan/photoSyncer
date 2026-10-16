@@ -95,6 +95,8 @@ data class CrontabHistoryItem(
     val startTime: String,
     val endTime: String?,
     val isCompleted: Boolean,
+    val executionStatus: String?,
+    val deletionReport: com.coooolfan.xiaomialbumsyncer.model.CloudDeletionReport?,
     val detailsCount: Long,
 )
 
@@ -114,6 +116,8 @@ data class CrontabHistoryOverview(
     val startTime: String,
     val endTime: String?,
     val isCompleted: Boolean,
+    val executionStatus: String?,
+    val deletionReport: com.coooolfan.xiaomialbumsyncer.model.CloudDeletionReport?,
 )
 
 data class HistoryDetailItem(

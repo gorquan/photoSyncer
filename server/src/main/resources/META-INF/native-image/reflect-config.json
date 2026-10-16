@@ -506,10 +506,13 @@
   "methods":[{"name":"getType","parameterTypes":[] }]
 },
 {
-  "name":"com.coooolfan.xiaomialbumsyncer.model.AssetDraft$$$DraftImpl"
+  "name":"com.coooolfan.xiaomialbumsyncer.model.AssetDraft$$$DraftImpl",
+  "allDeclaredMethods":true,
+  "allDeclaredFields":true
 },
 {
   "name":"com.coooolfan.xiaomialbumsyncer.model.AssetDraft$$$Impl",
+  "allDeclaredMethods":true,
   "allDeclaredFields":true,
   "queryAllDeclaredMethods":true,
   "queryAllDeclaredConstructors":true,
@@ -590,9 +593,8 @@
 {
   "name":"com.coooolfan.xiaomialbumsyncer.model.CrontabConfig",
   "allDeclaredFields":true,
-  "queryAllDeclaredMethods":true,
-  "queryAllDeclaredConstructors":true,
-  "methods":[{"name":"<init>","parameterTypes":["java.lang.String","java.lang.String","java.lang.String","boolean","boolean","boolean","boolean","java.lang.String"] }, {"name":"<init>","parameterTypes":["java.lang.String","java.lang.String","java.lang.String","boolean","boolean","boolean","boolean","java.lang.String","int","kotlin.jvm.internal.DefaultConstructorMarker"] }, {"name":"<init>","parameterTypes":["java.lang.String","java.lang.String","java.lang.String","boolean","boolean","boolean","boolean","java.lang.String","boolean"] }, {"name":"<init>","parameterTypes":["java.lang.String","java.lang.String","java.lang.String","boolean","boolean","boolean","boolean","java.lang.String","boolean","int","kotlin.jvm.internal.DefaultConstructorMarker"] }, {"name":"<init>","parameterTypes":["java.lang.String","java.lang.String","java.lang.String","boolean","boolean","boolean","boolean","java.lang.String","boolean","boolean"] }, {"name":"<init>","parameterTypes":["java.lang.String","java.lang.String","java.lang.String","boolean","boolean","boolean","boolean","java.lang.String","boolean","boolean","int","kotlin.jvm.internal.DefaultConstructorMarker"] }, {"name":"<init>","parameterTypes":["java.lang.String","java.lang.String","java.lang.String","boolean","boolean","boolean","boolean","java.lang.String","boolean","boolean","boolean","int","int","int","int","int"] }, {"name":"<init>","parameterTypes":["java.lang.String","java.lang.String","java.lang.String","boolean","boolean","boolean","boolean","java.lang.String","boolean","boolean","boolean","int","int","int","int","int","int","kotlin.jvm.internal.DefaultConstructorMarker"] }, {"name":"getCheckSha1","parameterTypes":[] }, {"name":"getDiffByTimeline","parameterTypes":[] }, {"name":"getDownloadImages","parameterTypes":[] }, {"name":"getDownloadVideos","parameterTypes":[] }, {"name":"getDownloaders","parameterTypes":[] }, {"name":"getExifProcessors","parameterTypes":[] }, {"name":"getExpression","parameterTypes":[] }, {"name":"getFetchFromDbSize","parameterTypes":[] }, {"name":"getFileTimeWorkers","parameterTypes":[] }, {"name":"getRewriteExifTime","parameterTypes":[] }, {"name":"getRewriteExifTimeZone","parameterTypes":[] }, {"name":"getRewriteFileSystemTime","parameterTypes":[] }, {"name":"getSkipExistingFile","parameterTypes":[] }, {"name":"getTargetPath","parameterTypes":[] }, {"name":"getTimeZone","parameterTypes":[] }, {"name":"getVerifiers","parameterTypes":[] }]
+  "allDeclaredMethods":true,
+  "allDeclaredConstructors":true
 },
 {
   "name":"com.coooolfan.xiaomialbumsyncer.model.CrontabDraft",
@@ -732,10 +734,13 @@
   "methods":[{"name":"getType","parameterTypes":[] }]
 },
 {
-  "name":"com.coooolfan.xiaomialbumsyncer.model.CrontabHistoryDraft$$$DraftImpl"
+  "name":"com.coooolfan.xiaomialbumsyncer.model.CrontabHistoryDraft$$$DraftImpl",
+  "allDeclaredMethods":true,
+  "allDeclaredFields":true
 },
 {
   "name":"com.coooolfan.xiaomialbumsyncer.model.CrontabHistoryDraft$$$Impl",
+  "allDeclaredMethods":true,
   "allDeclaredFields":true,
   "queryAllDeclaredMethods":true,
   "queryAllDeclaredConstructors":true,
@@ -2372,5 +2377,68 @@
   "allDeclaredConstructors": true,
   "allDeclaredMethods": true,
   "allDeclaredFields": true
+}
+,
+{
+  "name": "com.coooolfan.xiaomialbumsyncer.service.CloudDeletionService",
+  "allDeclaredConstructors": true,
+  "allDeclaredFields": true,
+  "allDeclaredMethods": true
+}
+,
+{
+  "name": "com.coooolfan.xiaomialbumsyncer.service.MediaDeletionService",
+  "allDeclaredConstructors": true,
+  "allDeclaredFields": true,
+  "allDeclaredMethods": true
+}
+,
+{
+  "name": "com.coooolfan.xiaomialbumsyncer.model.CloudDeletionReport",
+  "allDeclaredConstructors": true,
+  "allDeclaredFields": true,
+  "allDeclaredMethods": true
+}
+,
+{
+  "name": "com.coooolfan.xiaomialbumsyncer.utils.MediaDeletionResult",
+  "allDeclaredConstructors": true,
+  "allDeclaredFields": true,
+  "allDeclaredMethods": true
+}
+,
+{
+  "name": "com.coooolfan.xiaomialbumsyncer.utils.MediaDeletionJournal",
+  "allDeclaredConstructors": true,
+  "allDeclaredFields": true,
+  "allDeclaredMethods": true
+}
+,
+{
+  "name": "com.coooolfan.xiaomialbumsyncer.utils.DeletionOriginal",
+  "allDeclaredConstructors": true,
+  "allDeclaredFields": true,
+  "allDeclaredMethods": true
+}
+,
+{
+  "name": "com.coooolfan.xiaomialbumsyncer.controller.CrontabHistoryGroup",
+  "allDeclaredConstructors": true,
+  "allDeclaredFields": true,
+  "allDeclaredMethods": true
+}
+,
+{
+  "name": "com.coooolfan.xiaomialbumsyncer.mcp.CrontabHistoryItem",
+  "allDeclaredConstructors": true,
+  "allDeclaredFields": true,
+  "allDeclaredMethods": true
+}
+,
+{
+  "name": "com.coooolfan.xiaomialbumsyncer.mcp.CrontabHistoryOverview",
+  "allDeclaredConstructors": true,
+  "allDeclaredFields": true,
+  "allDeclaredMethods": true
 }
 ]

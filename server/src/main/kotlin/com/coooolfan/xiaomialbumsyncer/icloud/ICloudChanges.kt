@@ -23,7 +23,7 @@ internal fun ICloudPhotos.fetchIncremental(
                     mapOf("fieldName" to "direction", "comparator" to "EQUALS", "fieldValue" to mapOf("type" to "STRING", "value" to "ASCENDING"))))))
             .path("syncToken").asText()
         require(token.isNotBlank()) { "iCloud 未返回同步位点，无法建立增量基线" }
-        albums.forEach { fetchAssets(it, client, handler) }
+        albums.forEach { fetchAssets(it, client, handler = handler) }
         return token
     }
     try {

@@ -1,6 +1,8 @@
+import type {CloudDeletionReport} from './';
+
 /**
  * 折叠后的定时任务执行历史分组
- * 
+ *
  */
 export interface CrontabHistoryGroup {
     /**
@@ -23,4 +25,6 @@ export interface CrontabHistoryGroup {
      * 组内资产明细总数
      */
     readonly detailsCount: number;
+    readonly executionStatus?: string | undefined;
+    readonly deletionReport?: CloudDeletionReport | undefined;
 }
