@@ -16,4 +16,9 @@ export interface CrontabConfig {
     readonly fileTimeWorkers: number;
     readonly downloadAudios: boolean;
     readonly notify: boolean;
+    readonly downloadLivePhotos: boolean;
+    /**
+     * Use targetPath as a literal root, with account/zone isolated, album-independent files.
+     */
+    readonly synologyPhotos: boolean;
 }

@@ -70,10 +70,31 @@ const historyStatus = computed(() => {
   const history = props.history
   if (!history) return { severity: 'secondary' as const, label: t('schedule.status.unknown') }
   if (history.isCompleted)
-    return { severity: 'success' as const, label: t('schedule.status.completed') }
+    return { severity: 'secondary' as const, label: t('schedule.status.finished') }
   if (!history.endTime) return { severity: 'info' as const, label: t('schedule.status.running') }
   return { severity: 'warn' as const, label: t('schedule.status.terminated') }
 })
+
+function resolvePublication(detail: CrontabHistoryDetail) {
+  const status = detail.publicationStatus ?? 'LEGACY'
+  return {
+    severity: status === 'PUBLISHED' ? 'success' : status === 'FAILED' ? 'danger' : 'secondary',
+    label: t(`schedule.details.publication.${status}`),
+  }
+}
+
+function resolveVerification(detail: CrontabHistoryDetail) {
+  const status = detail.verificationStatus ?? 'LEGACY'
+  const severity =
+    status === 'SOURCE_VERIFIED'
+      ? 'success'
+      : status === 'FAILED'
+        ? 'danger'
+        : status === 'TRANSPORT_VERIFIED'
+          ? 'info'
+          : 'secondary'
+  return { severity, label: t(`schedule.details.verification.${status}`) }
+}
 
 function formatTime(value?: string) {
   if (!value) return '-'
@@ -247,12 +268,23 @@ const stepTagClass = '!whitespace-nowrap !text-[13px]'
             </template>
           </Column>
 
-          <Column header="SHA1" style="width: 6rem">
+          <Column :header="t('schedule.details.colSha1')" style="min-width: 9rem">
             <template #body="{ data }">
               <Tag
                 :class="stepTagClass"
-                :severity="resolveStepStatus(data.sha1Verified).severity"
-                :value="resolveStepStatus(data.sha1Verified).label"
+                :severity="resolveVerification(data).severity"
+                :value="resolveVerification(data).label"
+                :title="data.localSha256 ? `SHA-256: ${data.localSha256}` : undefined"
+              />
+            </template>
+          </Column>
+
+          <Column :header="t('schedule.details.colPublication')" style="min-width: 8rem">
+            <template #body="{ data }">
+              <Tag
+                :severity="resolvePublication(data).severity"
+                :value="resolvePublication(data).label"
+                :title="data.outputSha256 ? `SHA-256: ${data.outputSha256}` : undefined"
               />
             </template>
           </Column>

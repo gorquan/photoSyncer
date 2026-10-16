@@ -69,6 +69,7 @@ class DownloadStage(
                 // 后续校验/EXIF/文件时间阶段无可处理内容，一并标记完成，
                 // 否则该资产会在每个周期被重新拾取并再次失败
                 set(table.sha1Verified, true)
+                set(table.verificationStatus, VerificationStatus.SKIPPED)
                 set(table.exifFilled, true)
                 set(table.fsTimeUpdated, true)
             }
@@ -82,6 +83,7 @@ class DownloadStage(
             CrontabHistoryDetail(context) {
                 downloadCompleted = true
                 sha1Verified = true
+                verificationStatus = VerificationStatus.SKIPPED
                 exifFilled = true
                 fsTimeUpdated = true
             }

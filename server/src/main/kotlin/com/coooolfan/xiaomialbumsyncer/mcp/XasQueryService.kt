@@ -169,6 +169,13 @@ class XasQueryService(
                     filePath = detail.filePath,
                     downloadCompleted = detail.downloadCompleted,
                     sha1Verified = detail.sha1Verified,
+                    verificationStatus = detail.verificationStatus.name,
+                    localSha256 = detail.localSha256,
+                    verifiedSize = detail.verifiedSize,
+                    publicationStatus = detail.publicationStatus,
+                    archivePath = detail.archivePath,
+                    outputSha256 = detail.outputSha256,
+                    exportVersion = detail.exportVersion,
                     exifFilled = detail.exifFilled,
                     fsTimeUpdated = detail.fsTimeUpdated,
                     message = detail.message,
@@ -231,7 +238,7 @@ class XasQueryService(
         private const val HINT_CRONTAB_HISTORY =
             "使用 domain=crontab_history_detail 配合 id=<历史id> 查看该次运行的下载明细"
 
-        private const val HINT_CRONTAB_HISTORY_DETAIL = "通过 pageIndex/pageSize 翻页查看更多明细"
+        private const val HINT_CRONTAB_HISTORY_DETAIL = "isCompleted 仅表示执行结束；publicationStatus=PUBLISHED 表示本地资源组已发布，不代表 NAS 已完成索引。通过 pageIndex/pageSize 翻页查看更多明细"
 
         private const val HINT_SYSTEM = "仅展示脱敏信息；密码/passToken/通知配置不通过 MCP 暴露"
     }

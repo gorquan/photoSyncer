@@ -75,12 +75,9 @@ const hasRecordingAlbum = computed(() =>
 
 const isICloud = computed(() => selectedAccount.value?.provider === 'ICLOUD')
 watch(
-  [isICloud, () => form.value.config.checkSha1],
-  ([value]) => {
+  isICloud,
+  (value) => {
     if (value && form.value.syncMode === 'TIMELINE') form.value.syncMode = 'CURSOR'
-    if (!value && form.value.config.checkSha1) {
-      form.value.config = { ...form.value.config, checkSha1: false }
-    }
   },
   { immediate: true },
 )
@@ -302,7 +299,7 @@ watch(
               />
             </div>
 
-            <div class="grid grid-cols-3 gap-4">
+            <div class="grid grid-cols-2 gap-4">
               <div class="flex items-center gap-2 text-[13px] text-slate-600 dark:text-slate-300">
                 <Checkbox v-model="form.config.downloadImages" binary />
                 <span>{{ t('cronform.toggle.downloadImages') }}</span>
@@ -316,6 +313,14 @@ watch(
                 <span>{{ t('cronform.toggle.downloadAudios') }}</span>
               </div>
             </div>
+
+            <label class="flex items-center gap-2 text-[13px] text-slate-600 dark:text-slate-300">
+              <Checkbox v-model="form.config.downloadLivePhotos" binary />
+              <span>{{ t('cronform.toggle.downloadLivePhotos') }}</span>
+            </label>
+            <p class="text-[12px] text-slate-500">
+              {{ t('cronform.toggle.downloadLivePhotosHint') }}
+            </p>
 
             <Message severity="info" variant="simple" icon="pi pi-info-circle">
               <i18n-t keypath="cronform.notice.text" tag="div" class="text-[13px]">
@@ -418,12 +423,18 @@ watch(
               </div>
             </div>
 
+            <label class="flex items-center gap-2 text-[13px] text-slate-600 dark:text-slate-300">
+              <Checkbox v-model="form.config.synologyPhotos" binary />
+              <span>{{ t('cronform.toggle.synologyPhotos') }}</span>
+            </label>
+            <p class="text-[12px] text-slate-500">{{ t('cronform.toggle.synologyPhotosHint') }}</p>
+
             <div class="space-y-2">
               <div class="flex items-center justify-between">
                 <label class="block text-[13px] font-medium text-slate-500 dark:text-slate-400">{{
                   t('cronform.field.targetPath')
                 }}</label>
-                <div class="flex items-center gap-2">
+                <div v-if="!form.config.synologyPhotos" class="flex items-center gap-2">
                   <Button
                     v-if="useExpressionPath"
                     icon="pi pi-question-circle"
@@ -512,7 +523,7 @@ watch(
                     {{ t('cronform.advanced.rewriteFileSystemTimeHint') }}
                   </div>
                 </div>
-                <div v-if="isICloud" class="space-y-1">
+                <div class="space-y-1">
                   <div
                     class="flex items-center gap-2 text-[13px] text-slate-600 dark:text-slate-300"
                   >

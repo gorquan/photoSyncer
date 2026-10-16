@@ -31,7 +31,7 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
             select(table)
         }.firstOrNull() ?: throw IllegalArgumentException("Album $albumId not found, please refresh albums first")
 
-        media.fetchAssets(album) { media.saveAssets(it) }
+        media.fetchAssets(album) { media.saveAssets(it, authoritativeAppleRoles = media.isICloud(album.accountId)) }
 
         return getAssets(albumId, fetcher)
     }
@@ -175,7 +175,7 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
         for ((zone, selected) in albums.groupBy { ICloudAlbumKey.decode(it.remoteKey).zone }) {
             // 相册范围改变后建立新基线；账号之间、任务之间不共享同步进度。
             val key = "icloud:${crontab.accountId}:$zone:${selected.map { it.id }.sorted().joinToString(",")}"
-            icloud.fetchIncremental(selected, baseline[key], { media.saveAssets(it) }) { token ->
+            icloud.fetchIncremental(selected, baseline[key], { media.saveAssets(it, authoritativeAppleRoles = true) }) { token ->
                 cursors[key] = token
                 sql.executeUpdate(CrontabHistory::class) {
                     set(table.syncCursors, cursors.toMap())
@@ -197,7 +197,7 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
     private fun refreshAlbumFull(album: Album) {
         log.info("开始刷新相册 {} 的 Asset", album.id)
         val assetCount = media.fetchAssets(album) { assets ->
-            media.saveAssets(assets)
+            media.saveAssets(assets, authoritativeAppleRoles = media.isICloud(album.accountId))
         }
         if (!media.isICloud(album.accountId)) {
             sql.executeUpdate(Album::class) {
@@ -270,12 +270,25 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
     fun getAssetsUndownloadByCrontab(
         crontab: Crontab,
         pageSize: Int,
-        lastId: Long
+        lastId: Long,
+        reevaluatePublication: Boolean = false,
     ): List<Asset> {
         return sql.createQuery(Asset::class) {
             where(table.albumId valueIn crontab.albumIds)
             where(table.id gt lastId)
-            where(
+            where(table.currentVersion eq true)
+            if (crontab.config.synologyPhotos) {
+                // Choose one membership before checking download history, stable across pages/runs.
+                where(notExists(subQuery(Asset::class) {
+                    where(table.albumId valueIn crontab.albumIds)
+                    where(table.currentVersion eq true)
+                    where(table.logicalResourceKey ne "")
+                    where(table.logicalResourceKey eq parentTable.logicalResourceKey)
+                    where(table.id lt parentTable.id)
+                    select(table)
+                }))
+            }
+            if (!reevaluatePublication) where(
                 notExists(
                     subQuery(CrontabHistoryDetail::class) {
                         where(table.crontabHistory.crontabId eq crontab.id)
@@ -288,14 +301,49 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
                     })
             )
             if (!crontab.config.downloadImages) where(table.type ne AssetType.IMAGE)
-            if (!crontab.config.downloadVideos) where(table.type ne AssetType.VIDEO)
+            val companion = table.logicalResourceKey like "%/resOriginalVidCompl"
+            if (!crontab.config.downloadVideos) {
+                if (crontab.config.downloadLivePhotos && crontab.config.downloadImages) where(or(table.type ne AssetType.VIDEO, companion))
+                else where(table.type ne AssetType.VIDEO)
+            }
+            if (!crontab.config.downloadLivePhotos || !crontab.config.downloadImages) where(companion.not())
             if (!crontab.config.downloadAudios) where(table.type ne AssetType.AUDIO)
             orderBy(table.id.asc())
             select(table.fetchBy {
                 allScalarFields()
-                album { name() }
+                album { allScalarFields(); account { provider() } }
             })
         }.limit(pageSize).execute()
+    }
+
+
+    /** At most one current membership per selected resource; group size is bounded by provider roles. */
+    fun publicationGroup(crontab: Crontab, asset: Asset): List<Asset> {
+        val identity = com.coooolfan.xiaomialbumsyncer.utils.MediaIdentity.of(asset)
+        if (identity.provider != CloudProvider.ICLOUD) return listOf(asset)
+        val keys = listOf("resOriginal", "resOriginalAlt", "resOriginalVidCompl").map { "${identity.groupKey}/$it" }
+        val rows = sql.createQuery(Asset::class) {
+            where(table.albumId valueIn if (crontab.config.synologyPhotos) crontab.albumIds else listOf(asset.album.id))
+            where(table.currentVersion eq true)
+            where(table.logicalResourceKey valueIn keys)
+            where(notExists(subQuery(Asset::class) {
+                where(table.albumId valueIn if (crontab.config.synologyPhotos) crontab.albumIds else listOf(asset.album.id))
+                where(table.currentVersion eq true)
+                where(table.logicalResourceKey eq parentTable.logicalResourceKey)
+                where(table.id lt parentTable.id)
+                select(table)
+            }))
+            orderBy(table.id.asc())
+            select(table.fetchBy { allScalarFields(); album { allScalarFields(); account { provider() } } })
+        }.limit(64).execute()
+        return rows.distinctBy { it.logicalResourceKey }.filter {
+            when (it.type) {
+                AssetType.IMAGE -> crontab.config.downloadImages
+                AssetType.VIDEO -> if (com.coooolfan.xiaomialbumsyncer.utils.MediaIdentity.of(it).liveCompanion)
+                    crontab.config.downloadImages && crontab.config.downloadLivePhotos else crontab.config.downloadVideos
+                AssetType.AUDIO -> crontab.config.downloadAudios
+            }
+        }.ifEmpty { listOf(asset) }
     }
 
     private fun fetchAlbumsTimelineSnapshot(accountId: Long, albums: List<Album>): Map<Long, AlbumTimeline> {

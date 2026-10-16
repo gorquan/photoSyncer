@@ -1,4 +1,4 @@
-# <img src="./static/xiaomi-album-syncer-logo.png" alt="logo" width="20rem"> Xiaomi Album Syncer
+# <img src="./static/xiaomi-album-syncer-logo.png" alt="logo" width="20rem"> photoSyncer
 
 [![GitHub Stars](https://img.shields.io/github/stars/Coooolfan/XiaomiAlbumSyncer?style=flat)](https://github.com/Coooolfan/XiaomiAlbumSyncer/stargazers) [![Docker Pulls](https://img.shields.io/docker/pulls/coolfan1024/xiaomi-album-syncer?style=flat)](https://hub.docker.com/r/coolfan1024/xiaomi-album-syncer)
 
@@ -7,6 +7,8 @@
 ![banner](./static/banner.avif)
 
 发了 **issues** 记得常回来看看有没有回复，或者 >>>>> **[QQ 群聊：1059332701](https://qm.qq.com/q/H2trW6JWM4)**
+
+支持小米云相册与 Apple iCloud 照片同步。群晖 Photos 的配置与支持范围见 [兼容说明](docs/synology-photos.md)。
 
 ## Features/功能
 

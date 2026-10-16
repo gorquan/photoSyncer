@@ -19,6 +19,13 @@ class ICloudResourcesTest {
         "resOriginalVidComplFileType":{"value":"com.apple.quicktime-movie"},"resOriginalVidComplRes":{"value":{"fileChecksum":"checksum-video","size":456}},
         "resOriginalAltFileType":{"value":"public.jpeg"},"resOriginalAltRes":{"value":{"fileChecksum":"checksum-jpeg","size":789}}
     }}""")
+    @Test fun freshDownloadMetadataMustMatchEnumeratedOpaqueVersionEvenAtEqualSize() {
+        val original = Asset { checksum = "opaque-A"; size = 123 }
+        assertDoesNotThrow { requireResolvedResourceVersion(mapper.readTree("""{"fileChecksum":"opaque-A","size":123}"""), original) }
+        assertThrows(IllegalArgumentException::class.java) { requireResolvedResourceVersion(mapper.readTree("""{"fileChecksum":"opaque-B","size":123}"""), original) }
+        assertThrows(IllegalArgumentException::class.java) { requireResolvedResourceVersion(mapper.readTree("""{"fileChecksum":"opaque-A","size":124}"""), original) }
+    }
+
     @Test fun keepsAllOriginalResourcesAndAlbumMembershipsSeparate() {
         val files = parseResources(album(1), asset, master)
         assertEquals(setOf("checksum-photo", "checksum-video", "checksum-jpeg"), files.map { it.checksum }.toSet())
@@ -27,7 +34,15 @@ class ICloudResourcesTest {
         assertEquals(3, files.map { it.fileName }.toSet().size)
         assertEquals(1, files.count { it.type == AssetType.VIDEO })
         assertTrue(files.first { it.type == AssetType.VIDEO }.fileName.endsWith(".mov"))
-        assertEquals("IMG_0001_b82a06b9bec0.HEIC", files.first().fileName)
+        assertEquals(files.first().fileName.substringBeforeLast('.'), files.first { it.type == AssetType.VIDEO }.fileName.substringBeforeLast('.'))
+        assertTrue(files.first { it.remoteKey.contains("resOriginalAlt") }.fileName.contains("_alternate"))
+        val changedMaster = master.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>()
+        (changedMaster.at("/fields/resOriginalRes/value") as com.fasterxml.jackson.databind.node.ObjectNode).put("fileChecksum", "changed")
+        assertEquals(files.first().fileName, parseResources(album(1), asset, changedMaster).first().fileName)
+        val otherAccount = Album(album(1)) { accountId = 11 }
+        assertNotEquals(files.first().fileName, parseResources(otherAccount, asset, master).first().fileName)
+        val otherZone = Album(album(1)) { remoteKey = ICloudAlbumKey("SharedSync", "album-uuid").encode() }
+        assertNotEquals(files.first().fileName, parseResources(otherZone, asset, master).first().fileName)
         val other = parseResources(album(2), asset, master)
         assertEquals(files.map { it.remoteKey }, other.map { it.remoteKey })
         assertNotEquals(files.first().album.id, other.first().album.id)

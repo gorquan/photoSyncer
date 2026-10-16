@@ -142,7 +142,7 @@ val xasMockDir = layout.projectDirectory.dir("../xas-mock")
 val xasMockExecutable = layout.buildDirectory.file(
     "xas-mock/${if (System.getProperty("os.name").startsWith("Windows")) "xas-mock.exe" else "xas-mock"}"
 )
-val xasMockScenario = xasMockDir.file("scenarios/default.json")
+val xasMockScenario = xasMockDir.file("scenarios/api-e2e-media.json")
 val xasMockMemoryScenario = xasMockDir.file("scenarios/memory-profile.json")
 val xasMockProfilingScenario = xasMockDir.file("scenarios/memory-profile-small.json")
 val graalVmLauncher = javaToolchains.launcherFor {

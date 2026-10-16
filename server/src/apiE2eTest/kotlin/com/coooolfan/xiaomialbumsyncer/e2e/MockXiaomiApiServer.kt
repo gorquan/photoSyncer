@@ -11,7 +11,6 @@ import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
-import java.security.MessageDigest
 import java.time.Duration
 import java.util.Collections
 import java.util.concurrent.TimeUnit
@@ -25,11 +24,6 @@ class MockXiaomiApiServer private constructor(
 
     private val client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build()
     private val objectMapper = jacksonObjectMapper()
-
-    val mediaBytes: ByteArray = "xiaomi-album-syncer-api-e2e\n".toByteArray(StandardCharsets.UTF_8)
-    val mediaSha1: String = MessageDigest.getInstance("SHA-1")
-        .digest(mediaBytes)
-        .joinToString("") { "%02x".format(it) }
 
     fun assertNoUnexpectedRequests() {
         val stats = stats()

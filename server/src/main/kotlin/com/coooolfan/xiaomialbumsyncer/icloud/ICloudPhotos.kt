@@ -6,8 +6,6 @@ import org.noear.solon.annotation.Managed
 import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
-import java.io.OutputStream
-import java.security.DigestInputStream
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.Base64
@@ -130,6 +128,7 @@ class ICloudPhotos(private val accounts: ICloudAccountService) {
         repeat(2) { attempt ->
             val (client, url) = accounts.withClient(accountId) { client ->
                 val resource = resolveResource(client, zone, key)
+                requireResolvedResourceVersion(resource, asset)
                 val url = resource.path("downloadURL").asText()
                 require(url.isNotBlank()) { "iCloud 文件没有下载地址" }
                 client to url
@@ -204,12 +203,13 @@ class ICloudPhotos(private val accounts: ICloudAccountService) {
             val safeName = originalName.substringAfterLast('/').substringAfterLast('\\').replace(Regex("[\\r\\n]"), "_")
             val stem = safeName.substringBeforeLast('.', safeName)
             val ext = if (variant == "resOriginal") safeName.substringAfterLast('.', extension) else extension
-            // 内容和资源标识参与文件名，避免同名照片被 skipExistingFile 错误跳过。
-            val identity = "$recordName/$variant/$checksum"
-            val suffix = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(identity.toByteArray()), 0, 6)
+            val zone = ICloudAlbumKey.decode(album.remoteKey).zone
+            val groupIdentity = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().writeValueAsString(listOf(album.accountId, "ICLOUD", zone, recordName))
+            val suffix = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(groupIdentity.toByteArray()), 0, 16)
+            val roleSuffix = if (variant == "resOriginalAlt") "_alternate" else ""
             Asset {
                 remoteKey = ICloudResourceKey(recordName, variant).encode()
-                fileName = "${stem}_$suffix.$ext"
+                fileName = "asset_$suffix$roleSuffix.${ext.lowercase()}"
                 type = if (mime.startsWith("video/")) AssetType.VIDEO else AssetType.IMAGE
                 recordingType = null
                 dateTaken = Instant.ofEpochMilli(field(asset, "assetDate").asLong())
@@ -242,22 +242,6 @@ class ICloudPhotos(private val accounts: ICloudAccountService) {
         else -> "application/octet-stream" to "bin"
     }
 
-internal fun verifyICloudChecksum(path: Path, checksum: String): Boolean {
-    require(checksum.isNotBlank()) { "iCloud 文件缺少校验值" }
-    val encoded = Base64.getDecoder().decode(checksum)
-    // CloudKit 的文件校验值包含一个算法标记字节（SHA-1 为 0x01）。
-    val expected = when {
-        encoded.size == 21 && encoded[0] == 1.toByte() -> encoded.copyOfRange(1, 21)
-        encoded.size == 20 -> encoded
-        else -> error("不支持的 iCloud 文件校验格式")
-    }
-    val digest = MessageDigest.getInstance("SHA-1")
-    DigestInputStream(Files.newInputStream(path), digest).use {
-        it.transferTo(OutputStream.nullOutputStream())
-    }
-    return MessageDigest.isEqual(expected, digest.digest())
-}
-
 internal fun lookupRecords(client: ICloudClient, zone: String, names: List<String>): List<JsonNode> =
     names.distinct().chunked(200).flatMap { batch ->
         val records = client.cloud("records/lookup", mapOf("zoneID" to mapOf("zoneName" to zone),
@@ -270,3 +254,10 @@ internal fun lookupRecords(client: ICloudClient, zone: String, names: List<Strin
             error.isBlank() && !record.path("deleted").asBoolean()
         }
     }
+
+/** Fresh CloudKit signature is opaque version evidence, not a raw content hash. */
+internal fun requireResolvedResourceVersion(resource: JsonNode, asset: Asset) {
+    require(resource.path("fileChecksum").asText() == asset.checksum && resource.path("size").asLong(-1) == asset.size) {
+        "iCloud 来源版本已变化，请刷新相册后重试"
+    }
+}

@@ -28,8 +28,25 @@ interface CrontabHistoryDetail {
     // 下载
     val downloadCompleted: Boolean
 
-    // 校验
+    // Legacy verification-stage completion flag; see verificationStatus for actual evidence.
     val sha1Verified: Boolean
+
+    @Default("LEGACY")
+    val verificationStatus: VerificationStatus
+
+    val localSha256: String?
+
+    val verifiedSize: Long?
+
+    @Default("LEGACY")
+    val publicationStatus: String
+
+    val archivePath: String?
+
+    val outputSha256: String?
+
+    @Default("0")
+    val exportVersion: Int
 
     // EXIF 填充
     val exifFilled: Boolean
@@ -56,6 +73,9 @@ interface CrontabHistoryDetail {
                 this.filePath = genFilePath(history, asset)
                 this.downloadCompleted = false
                 this.sha1Verified = !history.crontab.config.checkSha1
+                this.verificationStatus = if (history.crontab.config.checkSha1) VerificationStatus.PENDING else VerificationStatus.SKIPPED
+                this.localSha256 = null
+                this.verifiedSize = null
                 this.exifFilled = !history.crontab.config.rewriteExifTime
                 this.fsTimeUpdated = !history.crontab.config.rewriteFileSystemTime
             }
@@ -70,6 +90,12 @@ interface CrontabHistoryDetail {
     fun genFilePath(history: CrontabHistory, asset: Asset): String {
         val config = history.crontab.config
         val configuredPath = config.targetPath.trim()
+        if (config.synologyPhotos) {
+            require(!configuredPath.contains("${'$'}{")) { "群晖 Photos 模式需要固定的目标根目录，不支持路径插值" }
+            require(configuredPath.isNotEmpty()) { "目标根目录不能为空" }
+            val identity = com.coooolfan.xiaomialbumsyncer.utils.MediaIdentity.of(asset)
+            return Path(configuredPath, identity.directory, identity.fileName(asset)).normalize().toString()
+        }
         val expression = if (TOKEN_REGEX.containsMatchIn(configuredPath)) configuredPath
         else Path(configuredPath, DEFAULT_FILE_TEMPLATE).toString()
 
@@ -77,7 +103,10 @@ interface CrontabHistoryDetail {
         val downloadTime = history.startTime
         val takenTime = asset.dateTaken
 
-        val fileNameRaw = asset.fileName
+        val fileNameRaw = if (org.babyfish.jimmer.ImmutableObjects.isLoaded(asset.album, "account") &&
+            asset.album.account.provider == CloudProvider.ICLOUD) {
+            com.coooolfan.xiaomialbumsyncer.utils.MediaIdentity.of(asset).fileName(asset)
+        } else asset.fileName
         val fileName = fileNameRaw
         val fileNameSafe = sanitizeSegment(fileName)
         val fileStem = fileNameSafe.substringBeforeLast('.', fileNameSafe)

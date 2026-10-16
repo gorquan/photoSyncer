@@ -42,4 +42,17 @@ data class CrontabConfig(
     val downloadAudios: Boolean = true,
 
     val notify: Boolean = true,
-)
+
+    val downloadLivePhotos: Boolean = true,
+
+    /** Use targetPath as a literal root, with account/zone isolated, album-independent files. */
+    val synologyPhotos: Boolean = false,
+) {
+    init {
+        if (synologyPhotos) {
+            require(targetPath.isNotBlank() && !targetPath.contains("${'$'}{")) {
+                "群晖 Photos 模式需要固定的目标根目录，不支持路径插值"
+            }
+        }
+    }
+}

@@ -41,7 +41,9 @@ export function buildSubmitConfig(form: LocalCronForm): CrontabConfig {
     ...form.config,
     // 禁用任务不校验表达式，提交时兜底默认值避免空串
     expression: form.config.expression.trim() || '0 0 23 * * ?',
-    targetPath: normalizeTargetPath(form.config.targetPath),
+    targetPath: form.config.synologyPhotos
+      ? form.config.targetPath.trim()
+      : normalizeTargetPath(form.config.targetPath),
   }
 }
 
@@ -52,12 +54,14 @@ export function createDefaultCronConfig(defaultTz: string): CrontabConfig {
     targetPath: '/app/download',
     downloadImages: true,
     downloadVideos: true,
+    downloadLivePhotos: true,
+    synologyPhotos: true,
     downloadAudios: true,
     rewriteExifTime: false,
     rewriteExifTimeZone: defaultTz,
     skipExistingFile: true,
     rewriteFileSystemTime: true,
-    checkSha1: false,
+    checkSha1: true,
     fetchFromDbSize: 2,
     downloaders: 8,
     verifiers: 2,
@@ -92,6 +96,8 @@ export function mapCrontabToForm(item: Crontab, fallbackTz: string): LocalCronFo
       targetPath: displayTargetPath(item.config.targetPath),
       downloadImages: item.config.downloadImages,
       downloadVideos: item.config.downloadVideos,
+      downloadLivePhotos: item.config.downloadLivePhotos ?? true,
+      synologyPhotos: item.config.synologyPhotos ?? false,
       downloadAudios: item.config.downloadAudios,
       rewriteExifTime: item.config.rewriteExifTime,
       rewriteExifTimeZone: item.config.rewriteExifTimeZone ?? item.config.timeZone ?? fallbackTz,

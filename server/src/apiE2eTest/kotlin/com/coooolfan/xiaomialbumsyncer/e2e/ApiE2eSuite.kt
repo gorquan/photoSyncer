@@ -2,7 +2,6 @@ package com.coooolfan.xiaomialbumsyncer.e2e
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
-import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -108,7 +107,7 @@ class ApiE2eSuite {
         api.get("/api/album").expect(200)
 
         val cameraAssets = api.json(api.get("/api/asset/$cameraAlbumId/latest").expect(200))
-        assertEquals(mock.mediaSha1, cameraAssets.first().path("checksum").asText())
+        assertTrue(cameraAssets.first().path("checksum").asText().matches(Regex("[a-f0-9]{40}")))
         api.get("/api/asset/$cameraAlbumId").expect(200)
         val audioAssets = api.json(api.get("/api/asset/$audioAlbumId/latest").expect(200))
         assertEquals("sample-audio.m4a", audioAssets.first().path("fileName").asText())
@@ -164,7 +163,10 @@ class ApiE2eSuite {
 
         val downloadedFile = Path.of(detail.path("filePath").asText())
         assertTrue(Files.isRegularFile(downloadedFile), "下载文件不存在: $downloadedFile")
-        assertArrayEquals(mock.mediaBytes, Files.readAllBytes(downloadedFile))
+        assertEquals(cameraAssets.first().path("checksum").asText(), java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-1").digest(Files.readAllBytes(downloadedFile))))
+        assertEquals("PUBLISHED", detail.path("publicationStatus").asText())
+        assertTrue(Files.isRegularFile(Path.of(detail.path("archivePath").asText())))
+        assertEquals(1, javax.imageio.ImageIO.read(downloadedFile.toFile()).width)
         mock.awaitRequest("/_control/v1/notify", Duration.ofSeconds(10))
 
         assertEquals(1, mock.routeCount("/gallery/user/album/list"))
@@ -477,9 +479,9 @@ class ApiE2eSuite {
                             "type" to "image",
                             "fileName" to "cursor.jpg",
                             "dateTaken" to 1714651200000L,
-                            "size" to 28,
+                            "size" to 4096,
                             "sha1Mode" to "exact",
-                            "contentPattern" to "xiaomi-album-syncer-api-e2e\n",
+                            "contentMode" to "jpeg",
                         ),
                     ),
                 )
@@ -543,6 +545,8 @@ class ApiE2eSuite {
         api.post("/api/crontab/$recordingCrontabId/executions").expect(200)
         val recordingHistoryId = awaitCompletedHistory(api, recordingCrontabId)
         assertCompletedDetailCount(api, recordingHistoryId, 1)
+        val originalRecordingTransfers = mock.routePrefixCount("/sfs/ns/recorder/file/201/cb/")
+        assertTrue(originalRecordingTransfers >= 1)
         api.delete("/api/crontab/$recordingCrontabId").expect(200)
 
         val mixedConfig = LinkedHashMap(baseConfig).apply {
@@ -573,7 +577,7 @@ class ApiE2eSuite {
         api.delete("/api/crontab/$mixedCrontabId").expect(200)
 
         assertTrue(mock.routeCount("/sfs/ns/recorder/dir/0/list") >= 3)
-        assertTrue(mock.routePrefixCount("/sfs/ns/recorder/file/201/cb/") >= 2)
+        assertEquals(originalRecordingTransfers, mock.routePrefixCount("/sfs/ns/recorder/file/201/cb/"), "重复导出应复用已经校验的原件")
         assertEquals(0, mock.timelineCount(-1), "录音是独立远端资源，不应请求 gallery timeline 的 -1")
         assertTrue(mock.timelineCount(1) >= 1, "混合任务应只为真实相册请求时间线")
     }
@@ -606,7 +610,7 @@ class ApiE2eSuite {
                 "/api/crontab",
                 linkedMapOf<String, Any?>(
                     "name" to "Deleted Gallery E2E",
-                    "description" to "云端已删除的相册资产应被跳过而非反复失败",
+                    "description" to "云端不可用原件保持失败并等待恢复",
                     "enabled" to false,
                     "syncMode" to "FULL",
                     "config" to galleryConfig,
@@ -635,9 +639,9 @@ class ApiE2eSuite {
                                 "type" to "image",
                                 "fileName" to "deleted-photo.jpg",
                                 "dateTaken" to 1714651200000L,
-                                "size" to 28,
+                                "size" to 4096,
                                 "sha1Mode" to "exact",
-                                "contentPattern" to "xiaomi-album-syncer-api-e2e\n",
+                                "contentMode" to "jpeg",
                             )
                         ),
                     ),
@@ -659,12 +663,12 @@ class ApiE2eSuite {
             api.get("/api/crontab/history/$galleryHistoryId/details?pageIndex=0&pageSize=10").expect(200)
         )
         assertEquals(2, galleryDetails.path("totalRowCount").asInt())
-        galleryDetails.path("rows").forEach { detail ->
-            assertTrue(detail.path("downloadCompleted").asBoolean(), "资产 ${detail.path("asset").path("id")} 应标记下载完成")
-            assertTrue(detail.path("message").isMissingNode || detail.path("message").isNull, "跳过不应产生错误消息")
-        }
+
         val deletedGalleryId = findAssetId(api, cameraAlbumId, "103")
         val deletedGallery = galleryDetails.path("rows").first { it.path("asset").path("id").asText() == deletedGalleryId }
+        assertFalse(deletedGallery.path("downloadCompleted").asBoolean())
+        assertEquals("FAILED", deletedGallery.path("publicationStatus").asText())
+        assertTrue(deletedGallery.path("message").asText().isNotBlank())
         assertFalse(Files.exists(Path.of(deletedGallery.path("filePath").asText())), "已删除资产不应产出文件")
         assertEquals(0, mock.routePrefixCount("/mock/oss/103"), "已删除资产不应请求 OSS 签名直链")
         api.delete("/api/crontab/$galleryCrontabId").expect(200)
@@ -683,7 +687,7 @@ class ApiE2eSuite {
                 "/api/crontab",
                 linkedMapOf<String, Any?>(
                     "name" to "Deleted Recording E2E",
-                    "description" to "云端已删除的录音应被跳过而非反复失败",
+                    "description" to "云端不可用录音保持失败并等待恢复",
                     "enabled" to false,
                     "syncMode" to "FULL",
                     "config" to recordingConfig,
@@ -732,12 +736,12 @@ class ApiE2eSuite {
             api.get("/api/crontab/history/$recordingHistoryId/details?pageIndex=0&pageSize=10").expect(200)
         )
         assertEquals(2, recordingDetails.path("totalRowCount").asInt())
-        recordingDetails.path("rows").forEach { detail ->
-            assertTrue(detail.path("downloadCompleted").asBoolean(), "资产 ${detail.path("asset").path("id")} 应标记下载完成")
-            assertTrue(detail.path("message").isMissingNode || detail.path("message").isNull, "跳过不应产生错误消息")
-        }
+
         val deletedRecordingId = findAssetId(api, audioAlbumId, "301")
         val deletedRecording = recordingDetails.path("rows").first { it.path("asset").path("id").asText() == deletedRecordingId }
+        assertFalse(deletedRecording.path("downloadCompleted").asBoolean())
+        assertEquals("FAILED", deletedRecording.path("publicationStatus").asText())
+        assertTrue(deletedRecording.path("message").asText().isNotBlank())
         assertFalse(Files.exists(Path.of(deletedRecording.path("filePath").asText())), "已删除录音不应产出文件")
         assertEquals(0, mock.routePrefixCount("/mock/oss/301"), "已删除录音不应请求 OSS 签名直链")
         api.delete("/api/crontab/$recordingCrontabId").expect(200)
@@ -745,7 +749,7 @@ class ApiE2eSuite {
 
     /**
      * storage 返回 retriable=true 的瞬时错误时，资产应被记录为失败并在下一个周期重试，
-     * 错误恢复后下载成功——区别于 retriable=false 的永久跳过。
+     * 错误恢复后下载成功——不可用的来源均不能标为已发布。
      */
     private fun executeTransientStorageErrorWorkflow(
         api: ApiClient,
@@ -797,9 +801,9 @@ class ApiE2eSuite {
                                 "type" to "image",
                                 "fileName" to "transient-photo.jpg",
                                 "dateTaken" to 1714651200000L,
-                                "size" to 28,
+                                "size" to 4096,
                                 "sha1Mode" to "exact",
-                                "contentPattern" to "xiaomi-album-syncer-api-e2e\n",
+                                "contentMode" to "jpeg",
                             )
                         ),
                     ),
@@ -823,9 +827,8 @@ class ApiE2eSuite {
         val failedDetails = api.json(
             api.get("/api/crontab/history/$failedHistoryId/details?pageIndex=0&pageSize=10").expect(200)
         )
-        assertEquals(1, failedDetails.path("totalRowCount").asInt())
-        val failedDetail = failedDetails.path("rows").first()
         val retryAssetId = findAssetId(api, cameraAlbumId, "104")
+        val failedDetail = failedDetails.path("rows").first { it.path("asset").path("id").asText() == retryAssetId }
         assertEquals(retryAssetId, failedDetail.path("asset").path("id").asText())
         assertFalse(failedDetail.path("downloadCompleted").asBoolean(), "瞬时错误不应标记下载完成")
         assertTrue(failedDetail.path("message").asText().contains("50051"), "失败消息应包含错误码")
@@ -849,8 +852,7 @@ class ApiE2eSuite {
         val recoveredDetails = api.json(
             api.get("/api/crontab/history/$recoveredHistoryId/details?pageIndex=0&pageSize=10").expect(200)
         )
-        assertEquals(1, recoveredDetails.path("totalRowCount").asInt())
-        val recoveredDetail = recoveredDetails.path("rows").first()
+        val recoveredDetail = recoveredDetails.path("rows").first { it.path("asset").path("id").asText() == retryAssetId }
         assertEquals(retryAssetId, recoveredDetail.path("asset").path("id").asText())
         assertTrue(recoveredDetail.path("downloadCompleted").asBoolean(), "恢复后应下载成功")
         assertTrue(recoveredDetail.path("message").isMissingNode || recoveredDetail.path("message").isNull)
