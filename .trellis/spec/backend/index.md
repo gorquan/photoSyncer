@@ -7,3 +7,5 @@ Read root AGENTS.md and .agents/skills/jimmer-orm/SKILL.md for entity/DSL edits.
 Run JDK 25 `cd server && ./gradlew clean compileKotlin test`. Add regressions for provider checksums, grouping, malformed motion structures and publication failure/retry. No private media fixtures. See [media compatibility](media-compatibility.md) and [database contracts](database-guidelines.md).
 
 See [native motion photo contracts](motion-photo.md) for XMP range validation and EXIF preservation.
+
+See [cloud deletion contracts](cloud-deletion.md) for provider evidence, deletion journals, shared ownership and cleanup status.

@@ -47,6 +47,9 @@ data class CrontabConfig(
 
     /** Use targetPath as a literal root, with account/zone isolated, album-independent files. */
     val synologyPhotos: Boolean = false,
+
+    /** Permanently remove owned exports and originals after authoritative cloud deletion. */
+    val syncCloudDeletes: Boolean = false,
 ) {
     init {
         if (synologyPhotos) {

@@ -150,6 +150,7 @@ class CrontabService(private val sql: KSqlClient) {
         val crontabHistoryId = sql.saveCommand(CrontabHistory {
             crontabId = crontab.id
             startTime = Instant.now()
+            executionStatus = "RUNNING"
         }, SaveMode.INSERT_ONLY).execute().modifiedEntity.id
 
         return sql.findOneById(
@@ -227,9 +228,17 @@ class CrontabService(private val sql: KSqlClient) {
         }
     }
 
-    fun finishCrontabHistory(crontabHistory: CrontabHistory) {
+    fun recordDeletionReport(history: CrontabHistory, report: CloudDeletionReport) {
+        sql.executeUpdate(CrontabHistory::class) {
+            set(table.deletionReport, report)
+            where(table.id eq history.id)
+        }
+    }
+
+    fun finishCrontabHistory(crontabHistory: CrontabHistory, status: String = "FAILED") {
         sql.executeUpdate(CrontabHistory::class) {
             set(table.endTime, Instant.now())
+            set(table.executionStatus, status)
             where(table.id eq crontabHistory.id)
         }
     }
@@ -322,6 +331,8 @@ class CrontabService(private val sql: KSqlClient) {
                             select(count(table))
                         }
                     )
+                    .add(sql(Int::class, "case when %e is null and (%e is null or %e = 'SUCCESS') then 1 else 0 end",
+                        table.deletionReport, table.executionStatus, table.executionStatus))
             }
         }
         // L2: + foldable, prevFoldable（窗口函数不能嵌套，LAG 需要物化一层）
@@ -335,15 +346,15 @@ class CrontabService(private val sql: KSqlClient) {
                     .add(
                         sql(
                             Int::class,
-                            "case when %e is not null and %e = 0 then 1 else 0 end",
-                            table._3, table._4
+                            "case when %e is not null and %e = 0 and %e = 1 then 1 else 0 end",
+                            table._3, table._4, table._5
                         )
                     )
                     .add(
                         sqlNullable(
                             Int::class,
-                            "lag(case when %e is not null and %e = 0 then 1 else 0 end) over(order by %e desc)",
-                            table._3, table._4, table._2
+                            "lag(case when %e is not null and %e = 0 and %e = 1 then 1 else 0 end) over(order by %e desc)",
+                            table._3, table._4, table._5, table._2
                         )
                     )
             }
@@ -376,6 +387,10 @@ class CrontabService(private val sql: KSqlClient) {
                 sum(table._4)
             )
         }.fetchPage(pageIndex, pageSize)
+        val evidence = sql.executeQuery(CrontabHistory::class) {
+            where(table.id valueIn page.rows.mapNotNull { it._1 })
+            select(table)
+        }.associateBy { it.id }
         return Page(
             page.rows.map {
                 CrontabHistoryGroup(
@@ -383,7 +398,9 @@ class CrontabService(private val sql: KSqlClient) {
                     startTime = it._2 ?: Instant.EPOCH,
                     endTime = it._3,
                     runCount = it._4,
-                    detailsCount = it._5 ?: 0
+                    detailsCount = it._5 ?: 0,
+                    executionStatus = evidence[it._1]?.executionStatus,
+                    deletionReport = evidence[it._1]?.deletionReport
                 )
             },
             page.totalRowCount,
@@ -403,6 +420,7 @@ class CrontabService(private val sql: KSqlClient) {
             where(table.crontabHistory.crontabId eq crontabId)
             where(table.publicationStatus eq "PUBLISHED")
             where(table.asset.currentVersion eq true)
+            where(table.asset.cloudDeleted eq false)
             // A reverted source can reactivate an old asset row before its new export
             // succeeds. Only the latest successful owner of a path may patch it.
             where(notExists(subQuery(CrontabHistoryDetail::class) {

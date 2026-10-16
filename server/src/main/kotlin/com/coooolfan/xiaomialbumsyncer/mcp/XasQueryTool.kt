@@ -158,6 +158,8 @@ class XasQueryTool(
             startTime()
             endTime()
             isCompleted()
+            executionStatus()
+            deletionReport()
             detailsCount()
             crontab { name() }
         }
@@ -166,6 +168,8 @@ class XasQueryTool(
             startTime()
             endTime()
             isCompleted()
+            executionStatus()
+            deletionReport()
         }
 
         private val CRONTAB_HISTORY_DETAIL_LIST_FETCHER = newFetcher(CrontabHistoryDetail::class).by {

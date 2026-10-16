@@ -145,6 +145,12 @@ const messages: typeof zh = {
       empty: 'No scheduled tasks yet',
     },
     status: {
+      SUCCESS: 'Succeeded',
+      PARTIAL: 'Partially completed',
+      FAILED: 'Failed',
+      CANCELLED: 'Cancelled',
+      RUNNING: 'Running',
+
       finished: 'Execution finished',
       completed: 'Completed',
       running: 'Running',
@@ -250,6 +256,16 @@ const messages: typeof zh = {
       colDownload: 'Download',
       colPublication: 'Publication',
       colSha1: 'File verification',
+      deletionSummary:
+        'Cloud deletion: {exports} exports and {originals} originals removed; {deferred} retained references, {conflicts} conflicts or errors',
+      deletionStatus: 'Deletion phase: {status}',
+      deletionStates: {
+        CHECKING: 'Checking',
+        RUNNING: 'Cleaning',
+        COMPLETE: 'Complete',
+        INCOMPLETE: 'Incomplete',
+        FAILED: 'Failed',
+      },
       publication: {
         LEGACY: 'Legacy, unconfirmed',
         PREPARING: 'Preparing',
@@ -365,6 +381,9 @@ const messages: typeof zh = {
       downloadLivePhotos: 'Download Apple Live Photo motion',
       downloadLivePhotosHint:
         'Include the paired video with photos, independently of ordinary videos. Xiaomi motion stays inside the original image.',
+      syncCloudDeletes: 'Sync cloud deletions',
+      syncCloudDeletesHint:
+        'Confirmed cloud deletions permanently remove managed photo/video exports and retained originals, including older versions without another task reference. Live Photo components are removed together. This does not delete cloud content.',
       synologyPhotos: 'Synology Photos layout',
       synologyPhotosHint:
         'Use a fixed destination root. Store one original per account/library; Live Photo image and video share a folder and basename. HEIC / HEVC preview depends on Image Assistant, NAS and client capabilities. Existing files are not migrated; use a new empty folder.',

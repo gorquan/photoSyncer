@@ -1,5 +1,5 @@
 import type {CrontabSyncMode} from '../enums/';
-import type {CrontabConfig} from '../static/';
+import type {CloudDeletionReport, CrontabConfig} from '../static/';
 
 export type CrontabDto = {
     'CrontabController/DEFAULT_CRONTAB': {
@@ -21,6 +21,8 @@ export type CrontabDto = {
             readonly startTime: string;
             readonly endTime?: string | undefined;
             readonly syncCursors?: {readonly [key:string]: string} | undefined;
+            readonly executionStatus?: string | undefined;
+            readonly deletionReport?: CloudDeletionReport | undefined;
             readonly fetchedAllAssets: boolean;
             /**
              * Execution ended, including handled failures; details.publicationStatus is export evidence.

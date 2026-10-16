@@ -90,6 +90,23 @@ func (s *State) deleted(id int64) (deletedMedia, bool) {
 	return deleted, ok
 }
 
+func (s *State) deletedGallery(userID string) []map[string]any {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	rows := []map[string]any{}
+	ids := []int64{}
+	for id, item := range s.data.Deleted {
+		if item.UserID == userID && item.Kind == "gallery" {
+			ids = append(ids, id)
+		}
+	}
+	slices.Sort(ids)
+	for _, id := range ids {
+		rows = append(rows, map[string]any{"id": fmt.Sprintf("%d", id), "status": "deleted", "deleteTime": int64(1714651200000)})
+	}
+	return rows
+}
+
 func (s *State) storageError(id int64) (storageError, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -251,7 +268,7 @@ func applyMutation(data *runtimeData, seed int64, op MutationOperation) ([]int64
 		}
 		delete(account.GalleryAlbums, op.AlbumID)
 		return append([]int64{op.AlbumID}, ids...), nil
-	case "addAssets":
+	case "addAssets", "restoreAssets":
 		album := account.GalleryAlbums[op.AlbumID]
 		if album == nil {
 			return nil, fmt.Errorf("album %d not found", op.AlbumID)
@@ -262,6 +279,13 @@ func applyMutation(data *runtimeData, seed int64, op MutationOperation) ([]int64
 		}
 		ids := make([]int64, 0, len(specs))
 		for i, spec := range specs {
+			if op.Op == "restoreAssets" {
+				deleted, ok := data.Deleted[spec.ID]
+				if !ok || deleted.UserID != account.UserID || deleted.Kind != "gallery" {
+					return nil, errors.New("restoreAssets requires a deleted gallery ID belonging to this account")
+				}
+				delete(data.Deleted, spec.ID)
+			}
 			id, err := allocateRuntimeID(data, spec.ID)
 			if err != nil {
 				return nil, err

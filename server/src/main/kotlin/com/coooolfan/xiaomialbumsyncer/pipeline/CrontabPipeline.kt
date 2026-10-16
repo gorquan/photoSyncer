@@ -1,6 +1,7 @@
 package com.coooolfan.xiaomialbumsyncer.pipeline
 
 import com.coooolfan.xiaomialbumsyncer.controller.SystemConfigController.Companion.NORMAL_SYSTEM_CONFIG
+import com.coooolfan.xiaomialbumsyncer.model.CloudDeletionReport
 import com.coooolfan.xiaomialbumsyncer.model.AlbumTimeline
 import com.coooolfan.xiaomialbumsyncer.model.Crontab
 import com.coooolfan.xiaomialbumsyncer.model.CrontabHistoryDetail
@@ -25,6 +26,8 @@ class CrontabPipeline(
     private val media: com.coooolfan.xiaomialbumsyncer.service.CloudMediaService,
     private val crontabService: CrontabService,
     private val notifyService: NotifyService,
+    private val deletion: com.coooolfan.xiaomialbumsyncer.service.CloudDeletionService,
+    private val cleanup: com.coooolfan.xiaomialbumsyncer.service.MediaDeletionService,
     private val publication: com.coooolfan.xiaomialbumsyncer.service.MediaPublicationService,
 ) {
 
@@ -37,7 +40,17 @@ class CrontabPipeline(
         // 对资产的刷新操作作为独立步骤执行，不混入后续的并发流，避免状态管理复杂化
         val crontabHistory = crontabService.createCrontabHistory(crontab)
 
+        var outcome = "FAILED"
+        var deletionReport: CloudDeletionReport? = null
+        var cleanupStarted = false
         try {
+            if (crontab.config.syncCloudDeletes) {
+                deletionReport = CloudDeletionReport("CHECKING")
+                crontabService.recordDeletionReport(crontabHistory, requireNotNull(deletionReport))
+                val detected = withContext(Dispatchers.IO) { deletion.reconcile(crontab) }
+                deletionReport = CloudDeletionReport("RUNNING", detected.checkedGroups, detected.newlyDeletedGroups, detected.restoredGroups)
+                crontabService.recordDeletionReport(crontabHistory, requireNotNull(deletionReport))
+            }
             when (crontab.syncMode) {
                 CrontabSyncMode.CURSOR -> {
                     // 基线为本任务最近一次已提交的游标，按来源读取后续变化记录
@@ -67,6 +80,23 @@ class CrontabPipeline(
                 CrontabSyncMode.FULL -> assetService.refreshAssetsFull(crontab, crontabHistory)
             }
 
+
+            if (deletionReport != null) {
+                for (group in deletion.deletedGroups(crontab)) {
+                    currentCoroutineContext().ensureActive()
+                    cleanupStarted = true
+                    withContext(Dispatchers.IO) {
+                        val results = cleanup.cleanup(crontab, listOf(group))
+                        deletionReport = requireNotNull(deletionReport).let { it.copy(results = it.results + results) }
+                        crontabService.recordDeletionReport(crontabHistory, requireNotNull(deletionReport))
+                    }
+                }
+                val evidence = requireNotNull(deletionReport)
+                val incomplete = evidence.results.any { it.status !in setOf("DELETED", "RESTORED") }
+                deletionReport = evidence.copy(status = if (evidence.results.any { it.status == "FAILED" }) "FAILED" else if (incomplete) "INCOMPLETE" else "COMPLETE")
+                crontabService.recordDeletionReport(crontabHistory, requireNotNull(deletionReport))
+                check(evidence.results.none { it.status == "FAILED" }) { "本地文件清理失败，详情见删除报告" }
+            }
 
             // 标记元数据枚举完成。
             crontabService.finishCrontabHistoryFetchedAllAssets(crontabHistory)
@@ -117,9 +147,22 @@ class CrontabPipeline(
             if (crontab.config.notify)
                 CoroutineScope(Dispatchers.IO).launch { notifyService.send(crontab, success, total) }
 
+            outcome = if (success != total || deletionReport?.status == "INCOMPLETE") "PARTIAL" else "SUCCESS"
             log.info("Crontab {} 的流水线执行完毕, 成功 {}/{}", crontab.id, success, total)
+        } catch (cancelled: CancellationException) {
+            outcome = "CANCELLED"
+            deletionReport?.takeIf { it.status in setOf("CHECKING", "RUNNING") }?.let {
+                crontabService.recordDeletionReport(crontabHistory, it.copy(status = "FAILED", message = "同步已取消；未完成的文件清理将在下次同步重试。"))
+            }
+            throw cancelled
+        } catch (failure: Exception) {
+            deletionReport?.takeIf { it.status in setOf("CHECKING", "RUNNING") }?.let {
+                crontabService.recordDeletionReport(crontabHistory, it.copy(status = "FAILED",
+                    message = if (it.status == "CHECKING") "删除检查失败，无法确认云端状态；本次未执行本地文件清理或发布，下次同步将重试。" else if (cleanupStarted) "文件清理未完成；报告保留已记录的处理结果，下次同步将继续重试。" else "元数据刷新未完成，本次未开始文件清理，已保留文件；下次同步将重试。"))
+            }
+            throw failure
         } finally {
-            crontabService.finishCrontabHistory(crontabHistory)
+            crontabService.finishCrontabHistory(crontabHistory, outcome)
         }
     }
 

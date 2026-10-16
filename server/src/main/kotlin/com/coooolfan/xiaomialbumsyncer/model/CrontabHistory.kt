@@ -28,6 +28,11 @@ interface CrontabHistory {
     @Column(name = "album_sync_cursors")
     val syncCursors: Map<String, String>?
 
+    val executionStatus: String?
+
+    @Serialized
+    val deletionReport: CloudDeletionReport?
+
     val fetchedAllAssets: Boolean
 
     /** Execution ended, including handled failures; details.publicationStatus is export evidence. */

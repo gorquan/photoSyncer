@@ -20,6 +20,10 @@ interface Asset {
     @Default("true")
     val currentVersion: Boolean
 
+    /** Confirmed removal from the active provider library, shared by all memberships/versions. */
+    @Default("false")
+    val cloudDeleted: Boolean
+
     @Default("\"\"")
     val logicalResourceKey: String
 

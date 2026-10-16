@@ -11,6 +11,10 @@ export type AssetDto = {
          * Historical versions remain for download history; only current versions are scheduled.
          */
         readonly currentVersion: boolean;
+        /**
+         * Confirmed removal from the active provider library, shared by all memberships/versions.
+         */
+        readonly cloudDeleted: boolean;
         readonly logicalResourceKey: string;
         /**
          * Xiaomi cloud hint only; actual dynamic structure is determined from original bytes.

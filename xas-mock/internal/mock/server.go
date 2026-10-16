@@ -40,6 +40,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /gallery/user/timeline", s.timeline)
 	s.mux.HandleFunc("GET /gallery/album/full", s.albumFull)
 	s.mux.HandleFunc("GET /gallery/allitems", s.allItems)
+	s.mux.HandleFunc("GET /gallery/deleted_v2", s.deletedGallery)
 	s.mux.HandleFunc("GET /sfs/ns/recorder/dir/0/list", s.recordingList)
 	s.mux.HandleFunc("GET /gallery/storage", s.galleryStorage)
 	s.mux.HandleFunc("GET /sfs/ns/recorder/file/", s.recordingStorage)
@@ -291,6 +292,14 @@ func (s *Server) recordingList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"code": 0, "data": map[string]any{"list": rows}})
 }
 
+func (s *Server) deletedGallery(w http.ResponseWriter, r *http.Request) {
+	account, ok := s.cloudAccount(w, r)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"code": 0, "data": map[string]any{"content": s.state.deletedGallery(account.UserID), "lastPage": true, "syncTag": "1"}})
+}
+
 func (s *Server) galleryStorage(w http.ResponseWriter, r *http.Request) {
 	account, ok := s.cloudAccount(w, r)
 	if !ok {
@@ -308,7 +317,7 @@ func (s *Server) galleryStorage(w http.ResponseWriter, r *http.Request) {
 	}
 	// 删除状态：被删除的资产可能仍出现在列表中，但 storage 已不可用
 	if deleted, exists := s.state.deleted(id); exists && deleted.UserID == account.UserID && deleted.Kind == "gallery" {
-		s.writeStorageError(w, 50050, "文件已删除", "media deleted", false)
+		s.writeStorageError(w, 50050, "相册/图片/视频在非法的状态", "illegal media state", false)
 		return
 	}
 	for _, album := range account.GalleryAlbums {

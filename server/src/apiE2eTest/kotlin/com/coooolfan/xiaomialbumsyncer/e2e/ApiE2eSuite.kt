@@ -17,7 +17,7 @@ class ApiE2eSuite {
 
     @Test
     fun fullApiWorkflow() {
-        val workDir = Files.createTempDirectory("xiaomi-api-e2e-")
+        val workDir = Files.createTempDirectory("xiaomi-api-e2e-").toRealPath()
         try {
             MockXiaomiApiServer.start().use { mock ->
                 ApplicationProcess.start(mock.baseUrl, workDir).use { application ->
@@ -227,6 +227,7 @@ class ApiE2eSuite {
             baseConfig = config,
         )
 
+        executeCloudDeletionWorkflow(api, mock, workDir, accountId, config)
         api.delete("/api/account/$accountId").expect(200)
         api.post(
             "/api/system-config/password",
@@ -859,6 +860,94 @@ class ApiE2eSuite {
         assertTrue(Files.exists(Path.of(recoveredDetail.path("filePath").asText())), "恢复后应产出文件")
         assertTrue(mock.routePrefixCount("/mock/oss/104") >= 1, "恢复后应请求 OSS 签名直链")
         api.delete("/api/crontab/$crontabId").expect(200)
+    }
+
+    /** Synthetic cloud only: managed exports and originals mirror confirmed deletion in every sync mode. */
+    private fun executeCloudDeletionWorkflow(api: ApiClient, mock: MockXiaomiApiServer, workDir: Path,
+                                            accountId: Long, baseConfig: LinkedHashMap<String, Any?>) {
+        for ((index, mode) in listOf("FULL", "TIMELINE", "CURSOR").withIndex()) {
+            val remoteAlbum = 70 + index
+            val remoteAsset = 700 + index
+            fun mutate(operation: Map<String, Any?>) = mock.mutate(mapOf("operations" to listOf(mapOf("userId" to "mock-user") + operation)))
+            mutate(mapOf("op" to "createAlbum", "album" to mapOf("albumId" to remoteAlbum, "name" to "Mirror $mode")))
+            val spec = mapOf("id" to remoteAsset, "type" to "image", "fileName" to "mirror-$mode.jpg",
+                "dateTaken" to 1714651200000L, "size" to 4096, "sha1Mode" to "exact", "contentMode" to "jpeg")
+            fun add(op: String) = mutate(mapOf("op" to op, "albumId" to remoteAlbum, "assets" to listOf(spec)))
+            add("addAssets")
+            val albumId = findAlbumId(api.json(api.get("/api/album/latest/$accountId").expect(200)), remoteAlbum.toString())
+            val config = LinkedHashMap(baseConfig).apply {
+                this["syncCloudDeletes"] = true; this["synologyPhotos"] = true; this["notify"] = false
+                this["targetPath"] = workDir.resolve("mirror-$mode").toString()
+            }
+            val task = api.json(api.post("/api/crontab", mapOf("name" to "Mirror $mode", "description" to "Managed deletion",
+                "enabled" to false, "syncMode" to mode, "config" to config, "accountId" to accountId,
+                "albumIds" to listOf(albumId))).expect(200)).path("id").asLong()
+            var previous: Long? = null
+            fun run(): JsonNode {
+                api.post("/api/crontab/$task/executions").expect(200)
+                val id = awaitCompletedHistory(api, task, previous); previous = id
+                return api.json(api.get("/api/crontab").expect(200)).first { it.path("id").asLong() == task }
+                    .path("histories").first { it.path("id").asLong() == id }
+            }
+            fun paths(history: JsonNode): Pair<Path, Path> {
+                val details = api.json(api.get("/api/crontab/history/${history.path("id").asLong()}/details?pageIndex=0&pageSize=10").expect(200)).path("rows")
+                val detail = details.single()
+                assertEquals("PUBLISHED", detail.path("publicationStatus").asText())
+                return Path.of(detail.path("filePath").asText()) to Path.of(detail.path("archivePath").asText())
+            }
+            val first = run(); assertEquals("SUCCESS", first.path("executionStatus").asText())
+            val (export, archive) = paths(first)
+            val bytes = Files.readAllBytes(export)
+            assertTrue(Files.exists(archive))
+            mutate(mapOf("op" to "deleteAssets", "albumId" to remoteAlbum, "ids" to listOf(remoteAsset)))
+            val deleted = run()
+            assertEquals("SUCCESS", deleted.path("executionStatus").asText(), deleted.toString())
+            val report = deleted.path("deletionReport")
+            assertEquals("COMPLETE", report.path("status").asText())
+            assertEquals(1, report.path("exportsDeleted").asInt()); assertEquals(1, report.path("originalsDeleted").asInt())
+            assertFalse(Files.exists(export)); assertFalse(Files.exists(archive))
+            assertEquals(0, run().path("deletionReport").path("exportsDeleted").asInt())
+            add("restoreAssets")
+            val restored = run(); paths(restored)
+            assertTrue(Files.exists(export)); assertTrue(Files.exists(archive))
+            // Changed user bytes survive deletion and the public run is visibly incomplete.
+            Files.writeString(export, "externally edited")
+            mutate(mapOf("op" to "deleteAssets", "albumId" to remoteAlbum, "ids" to listOf(remoteAsset)))
+            val conflicted = run()
+            assertEquals("PARTIAL", conflicted.path("executionStatus").asText())
+            assertEquals("INCOMPLETE", conflicted.path("deletionReport").path("status").asText())
+            assertTrue(conflicted.path("deletionReport").path("conflictCount").asInt() > 0)
+            assertEquals("externally edited", Files.readString(export))
+            Files.write(export, bytes)
+            val retried = run()
+            assertEquals("SUCCESS", retried.path("executionStatus").asText())
+            assertFalse(Files.exists(export)); assertFalse(Files.exists(archive))
+            add("restoreAssets"); paths(run())
+            // Incomplete authoritative enumeration stops before ordinary refresh/cursor movement or cleanup.
+            mutate(mapOf("op" to "deleteAlbum", "albumId" to remoteAlbum))
+            val beforeFull = mock.routeCount("/gallery/album/full")
+            val beforeTimeline = mock.routeCount("/gallery/user/timeline")
+            val beforeCursor = mock.routeCount("/gallery/allitems")
+            val beforeGallery = mock.routeCount("/gallery/user/galleries")
+            val beforeStorage = mock.routeCount("/gallery/storage")
+            val failed = run()
+            assertEquals("FAILED", failed.path("executionStatus").asText())
+            assertEquals("FAILED", failed.path("deletionReport").path("status").asText())
+            assertFalse(failed.path("fetchedAllAssets").asBoolean())
+            assertTrue(failed.path("syncCursors").isNull || failed.path("syncCursors").isMissingNode)
+            assertEquals(beforeFull, mock.routeCount("/gallery/album/full"))
+            assertEquals(beforeTimeline, mock.routeCount("/gallery/user/timeline"))
+            assertEquals(beforeCursor, mock.routeCount("/gallery/allitems"))
+            assertEquals(beforeGallery + 1, mock.routeCount("/gallery/user/galleries"))
+            assertEquals(beforeStorage, mock.routeCount("/gallery/storage"))
+            assertTrue(Files.exists(export)); assertTrue(Files.exists(archive))
+            // Failure/deletion-only rows must not disappear into collapsed zero-asset histories.
+            val publicGroup = api.json(api.get("/api/crontab/$task/histories?pageIndex=0&pageSize=10").expect(200)).path("rows").first()
+            assertEquals(1, publicGroup.path("runCount").asInt())
+            assertEquals("FAILED", publicGroup.path("executionStatus").asText())
+            api.delete("/api/crontab/$task").expect(200)
+        }
+        assertTrue(mock.routeCount("/gallery/deleted_v2") >= 3)
     }
 
     private fun assertCompletedDetailCount(api: ApiClient, historyId: Long, expected: Int) {

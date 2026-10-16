@@ -209,7 +209,7 @@ XAS 创建以下本地虚拟相册；`__all__` 等是 XAS 自己的标识，不�
 | 字段 | 含义与使用 |
 | --- | --- |
 | `size` | 文件大小，字节；用于下载后长度校验 |
-| `fileChecksum` | 文件校验值；XAS 支持 Base64 解码后 20 字节 SHA-1，或首字节 0x01 的 21 字节格式；不能直接视为十六进制 SHA-1 |
+| `fileChecksum` | CloudKit 来源签名，作为不透明的版本标识保存；不解释为普通 SHA-1 |
 | `downloadURL` | 文件下载地址；XAS 下载前查询资产，并按需沿 masterRef 查询原件，不持久化 |
 | `referenceChecksum` | 私有库文件包装密钥的校验值，区别于文件内容校验 |
 | `wrappingKey` | 文件加密相关密钥材料 |
@@ -243,13 +243,15 @@ iCloud 支持全量和位点增量模式，不支持时间线比较。全量模�
 | `moreComing` | 是否还有下一页；即使 records 为空也以该字段决定是否继续 |
 | `serverErrorCode` / `reason` | 区域级错误；XAS 对失效位点重建全量基线 |
 
-当前 XAS 使用变更流中的 CPLAsset、CPLMaster 和新增成员关系，并 lookup 当前相册成员状态。不会依据删除事件清理已有备份，也没有将流中的 CPLAlbum 改名/排序变更直接应用到本地相册元数据。
+当前 XAS 使用变更流中的 CPLAsset、CPLMaster 和新增成员关系，并 lookup 当前相册成员状态。任务开启 `syncCloudDeletes` 后，会在普通元数据刷新和位点推进前执行额外的完整所选相册检查；本地已知但未观察到的逻辑照片，通过完整单记录 `records/lookup` 确认。明确的 `deleted`、`isDeleted`、`isExpunged`，或对应记录的 `NOT_FOUND` / `UNKNOWN_ITEM` 才作为删除依据；有效的当前 CPLAsset 说明仍存在，即使照片已隐藏、取消收藏或移出所选相册。缺失、不完整、名称不匹配或未知错误响应会使检测失败并保留文件。
+
+确认删除状态独立于来源版本持久化，并阻止旧原件重新发布。清理覆盖该逻辑照片的所有已知角色、相册成员关系和历史来源版本，使用本地发布凭据验证路径归属及文件哈希；冲突与其他任务保留的引用会阻止对应文件删除。中断后可重试，云端恢复并被新扫描观察到后允许重新同步。旧任务默认关闭此设置，新建任务表单默认开启。程序没有将流中的 CPLAlbum 改名/排序变更直接应用到本地相册元数据。
 
 ## 8. 下载与文件处理
 
 下载 URL 按需通过 lookup 刷新，初始地址必须为 HTTPS。CDN 客户端不携带 Apple 认证头和 cookie，支持重定向。首次 CDN 请求返回 401、403、410 时重新 lookup 并重试一次；其他失败直接交给任务重试。
 
-下载写入 `{fileName}.{detailId}.tmp`，检查长度后移动到目标路径；优先原子移动，不支持时使用覆盖移动，异常时清理临时文件。`skipExistingFile=true` 且目标文件存在时直接复用文件，后续处理仍由任务配置控制。`checkSha1=true` 时由校验阶段解析 iCloud 的 `Asset.checksum` 并校验；小米云资产跳过 SHA-1 检查，校验完成标记设为 true。下载阶段只检查文件大小。内容校验值不匹配时重置下载完成状态并删除损坏文件，供下次任务重新下载；不支持的校验值格式与读取异常不会触发文件删除。EXIF 与文件时间重写分别由对应阶段执行，完成标记与错误保存在任务历史明细中。
+生产发布使用 `MediaPublicationService` / `MediaPublisher` 保存校验后的原件，再从副本处理并发布。iCloud 的不透明 `fileChecksum` 作为来源版本保存；检查长度、容器及动态结构，并单独记录本地 SHA-256，不声称验证了 Apple 内容签名。小米普通 SHA-1 仅在启用来源校验时比较。现有同名文件和旧历史完成标志不能跳过发布凭据及哈希检查，缺失或损坏的导出可从保留原件修复。Apple 实况图片与配套视频按组准备，原有配对元数据和动态原件字节保持不变。EXIF 修改在副本上进行，原件与输出哈希分别保存。具体目录、失败恢复与云端删除清理规则见 [Synology Photos 使用说明](synology-photos.md)。
 
 资源范围见 CPLMaster 字段表，不下载编辑渲染版本、缩略图或 sidecar。文件名使用稳定资源后缀，避免一个逻辑资产的多个原件覆盖彼此。
 
@@ -266,7 +268,7 @@ iCloud 支持全量和位点增量模式，不支持时间线比较。全量模�
 | `Asset.checksum` | 原样保存 CloudKit 的 Base64 `fileChecksum`；小米来源保存其十六进制 SHA-1 |
 | `Asset.fileName` | 原始文件名加稳定资源后缀，不是原样复制 filenameEnc |
 
-相册唯一约束为 `(account_id, remote_key)`；查询索引与智能集合条件由 albumId 推导，不持久化。资产唯一约束为 `(album_id, remote_key, checksum)`；账号与来源由相册关联查询，iCloud zone 由相册 remote_key 提供，masterId 在下载时通过 masterRef 查询，校验值仅保存在 checksum。同一照片放入多个所选相册时，XAS 为每个相册建立独立下载记录。通过本地 assetCount 或下载文件数反推 Apple 照片应用的计数时，应先统一统计口径。
+相册唯一约束为 `(account_id, remote_key)`；查询索引与智能集合条件由 albumId 推导，不持久化。资产唯一约束为 `(album_id, remote_key, checksum)`；账号与来源由相册关联查询，iCloud zone 由相册 remote_key 提供，masterId 在下载时通过 masterRef 查询，来源签名保存在 checksum。逻辑资源身份独立于签名，同一照片在不同相册保留成员记录，群晖 Photos 模式按逻辑身份只导出一份。`currentVersion` 标识来源当前版本，`cloudDeleted` 独立记录确认的云端删除状态。通过本地 assetCount 或下载文件数反推 Apple 照片应用的计数时，应先统一统计口径。
 
 ## 10. 实现与验证
 

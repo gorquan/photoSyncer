@@ -143,6 +143,12 @@ export default {
       empty: '暂无计划任务',
     },
     status: {
+      SUCCESS: '成功',
+      PARTIAL: '部分完成',
+      FAILED: '失败',
+      CANCELLED: '已取消',
+      RUNNING: '进行中',
+
       finished: '执行结束',
       completed: '完成',
       running: '进行中',
@@ -247,6 +253,16 @@ export default {
       colDownload: '下载',
       colPublication: '发布',
       colSha1: '文件校验',
+      deletionSummary:
+        '云端删除：导出 {exports} 个，原件 {originals} 个；其他任务引用 {deferred} 个，冲突或错误 {conflicts} 个',
+      deletionStatus: '删除阶段：{status}',
+      deletionStates: {
+        CHECKING: '核对中',
+        RUNNING: '清理中',
+        COMPLETE: '完成',
+        INCOMPLETE: '未全部清理',
+        FAILED: '失败',
+      },
       publication: {
         LEGACY: '旧记录未确认',
         PREPARING: '准备中',
@@ -360,6 +376,9 @@ export default {
       downloadVideos: '下载视频',
       downloadLivePhotos: '下载苹果 Live Photo 动态部分',
       downloadLivePhotosHint: '随照片下载配对视频，独立于普通视频开关；小米动态照片保留在原图中。',
+      syncCloudDeletes: '同步云端删除',
+      syncCloudDeletesHint:
+        '云端确认删除后，永久删除本任务管理的照片/视频导出及无其他任务引用的留存原件（含历史版本）。Live Photo 配套文件一起删除；不会删除云端内容。',
       synologyPhotos: '群晖 Photos 兼容布局',
       synologyPhotosHint:
         '目标路径填写固定根目录。按账号和图库保存一份原件，Live Photo 图片与视频同名同目录。HEIC / HEVC 预览取决于 Image Assistant、NAS 和客户端能力。旧文件不会自动迁移，建议使用新的空目录。',

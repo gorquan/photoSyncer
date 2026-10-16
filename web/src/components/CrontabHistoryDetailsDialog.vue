@@ -69,6 +69,12 @@ const { t, locale } = useI18n()
 const historyStatus = computed(() => {
   const history = props.history
   if (!history) return { severity: 'secondary' as const, label: t('schedule.status.unknown') }
+  if (
+    history.executionStatus === 'FAILED' ||
+    history.executionStatus === 'PARTIAL' ||
+    history.executionStatus === 'CANCELLED'
+  )
+    return { severity: 'warn' as const, label: t(`schedule.status.${history.executionStatus}`) }
   if (history.isCompleted)
     return { severity: 'secondary' as const, label: t('schedule.status.finished') }
   if (!history.endTime) return { severity: 'info' as const, label: t('schedule.status.running') }
@@ -189,6 +195,33 @@ const stepTagClass = '!whitespace-nowrap !text-[13px]'
             :loading="loading"
             @click="emit('refresh')"
           />
+        </div>
+
+        <div
+          v-if="history?.deletionReport"
+          class="space-y-1 text-sm text-slate-600 dark:text-slate-300"
+        >
+          <p>
+            {{
+              t('schedule.details.deletionStatus', {
+                status: t(`schedule.details.deletionStates.${history.deletionReport.status}`),
+              })
+            }}
+          </p>
+          <p>
+            {{
+              t('schedule.details.deletionSummary', {
+                exports: history.deletionReport.exportsDeleted,
+                originals: history.deletionReport.originalsDeleted,
+                deferred: history.deletionReport.deferredFiles,
+                conflicts: history.deletionReport.conflictCount,
+              })
+            }}
+          </p>
+          <p v-if="history.deletionReport.message">{{ history.deletionReport.message }}</p>
+          <div v-for="result in history.deletionReport.results" :key="result.groupKey">
+            <p v-for="message in result.conflicts" :key="message">{{ message }}</p>
+          </div>
         </div>
 
         <div
