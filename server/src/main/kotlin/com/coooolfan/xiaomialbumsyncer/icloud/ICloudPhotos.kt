@@ -89,16 +89,23 @@ class ICloudPhotos(private val accounts: ICloudAccountService) {
         var rank = 0L
         var total = 0L
         val seen = mutableSetOf<String>()
+        var marker: String? = null
+        val seenMarkers = mutableSetOf<String>()
         while (true) {
             val filters = mutableListOf(filter("startRank", "INT64", rank), filter("direction", "STRING", "ASCENDING"))
             val smartAlbum = ref.smartAlbum()
             if (smartAlbum != null) filters += filter("smartAlbum", "STRING", smartAlbum)
             else if (!ref.albumId.startsWith("__")) filters += filter("parentId", "STRING", ref.albumId)
-            val page = client.cloud("records/query", mapOf("query" to mapOf("recordType" to ref.queryType(), "filterBy" to filters),
-                "resultsLimit" to 200, "zoneID" to zoneId(ref.zone)))
+            val body = mutableMapOf<String, Any>("query" to mapOf("recordType" to ref.queryType(), "filterBy" to filters),
+                "resultsLimit" to 200, "zoneID" to zoneId(ref.zone))
+            marker?.let { body["continuationMarker"] = it }
+            val page = client.cloud("records/query", body)
             if (strict) validateICloudEnumerationPage(page)
+            val nextMarker = iCloudAssetContinuationMarker(page)
+            if (nextMarker != null) require(seenMarkers.add(nextMarker)) { "iCloud 资产分页没有推进，请重试同步" }
             val records = page.path("records").toList()
             val assets = records.filter { it.path("recordType").asText() == "CPLAsset" }
+            require(assets.isNotEmpty() || nextMarker == null) { "iCloud 资产续页缺少资产记录，无法确认完整性" }
             if (assets.isEmpty()) break
             val masters = records.filter { it.path("recordType").asText() == "CPLMaster" }.associateBy { it.path("recordName").asText() }
             val missing = assets.map { field(it, "masterRef").path("recordName").asText() }.filterNot(masters::containsKey).distinct()
@@ -112,7 +119,10 @@ class ICloudPhotos(private val accounts: ICloudAccountService) {
             }
             handler(rows)
             total += rows.size
-            rank += assets.size
+            // A continuation chain keeps its original query, including startRank.
+            if (marker != null && nextMarker == null) break
+            if (nextMarker == null) rank += assets.size
+            marker = nextMarker
         }
         return total
     }
@@ -303,9 +313,8 @@ internal fun validateICloudEnumerationPage(page: JsonNode) {
         "iCloud 资产分页响应不完整"
     }
     val records = page.path("records")
-    require(page.path("continuationMarker").isMissingNode || page.path("continuationMarker").isNull) {
-        "iCloud 资产分页返回未知的续页方式，无法确认完整性"
-    }
+    val marker = iCloudAssetContinuationMarker(page)
+    require(!records.isEmpty || marker == null) { "iCloud 资产续页缺少资产记录，无法确认完整性" }
     require(records.all { record ->
         record.path("serverErrorCode").asText().isBlank() && record.path("recordName").asText().isNotBlank() &&
             record.path("recordType").asText() in setOf("CPLAsset", "CPLMaster", "CPLContainerRelation")
@@ -316,4 +325,11 @@ internal fun validateICloudEnumerationPage(page: JsonNode) {
     // A tombstone in a live query is not a live observation; a fresh direct lookup must decide it.
     require(records.none { iCloudDeletionFlag(it.path("deleted")) || iCloudDeletionFlag(field(it, "isDeleted")) ||
         iCloudDeletionFlag(field(it, "isExpunged")) }) { "iCloud 活跃资产分页包含删除记录，请重试同步" }
+}
+
+private fun iCloudAssetContinuationMarker(page: JsonNode): String? {
+    val marker = page.get("continuationMarker") ?: return null
+    if (marker.isNull) return null
+    require(marker.isTextual && marker.asText().isNotBlank()) { "iCloud 资产续页标记无效，无法确认完整性" }
+    return marker.asText()
 }
