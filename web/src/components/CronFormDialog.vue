@@ -6,6 +6,7 @@ import InputText from 'primevue/inputtext'
 import Textarea from 'primevue/textarea'
 import ToggleSwitch from 'primevue/toggleswitch'
 import Checkbox from 'primevue/checkbox'
+import RadioButton from 'primevue/radiobutton'
 import Select from 'primevue/select'
 import MultiSelect from 'primevue/multiselect'
 import InputNumber from 'primevue/inputnumber'
@@ -126,7 +127,6 @@ function goBack() {
 
 function selectSyncMode(mode: CrontabSyncMode) {
   form.value.syncMode = mode
-  nextStep()
 }
 
 watch(formErrors, (errors) => {
@@ -347,7 +347,61 @@ watch(
           </div>
 
           <!-- 同步模式 -->
-          <div v-else-if="step === 'mode'" key="mode" class="flex flex-col gap-3 pt-2">
+          <div v-else-if="step === 'mode'" key="mode" class="flex flex-col gap-5 pt-2">
+            <fieldset class="space-y-3">
+              <legend class="mb-2 text-[13px] font-medium">
+                {{ t('cronform.retention.title') }}
+              </legend>
+              <label
+                v-for="mirror in [false, true]"
+                :key="String(mirror)"
+                :for="mirror ? 'retention-mirror' : 'retention-backup'"
+                class="flex cursor-pointer items-start gap-3 rounded-lg border p-3"
+                :class="
+                  form.config.syncCloudDeletes === mirror
+                    ? 'border-slate-400 bg-slate-50 dark:border-slate-500 dark:bg-slate-800'
+                    : 'border-slate-200 dark:border-slate-700'
+                "
+              >
+                <RadioButton
+                  v-model="form.config.syncCloudDeletes"
+                  :inputId="mirror ? 'retention-mirror' : 'retention-backup'"
+                  name="local-retention"
+                  :value="mirror"
+                  class="mt-0.5"
+                />
+                <span>
+                  <span class="block font-medium">{{
+                    t(mirror ? 'cronform.retention.mirror' : 'cronform.retention.backup')
+                  }}</span>
+                  <span class="mt-1 block text-[12px] text-slate-500 dark:text-slate-400">{{
+                    t(mirror ? 'cronform.retention.mirrorHint' : 'cronform.retention.backupHint')
+                  }}</span>
+                </span>
+              </label>
+            </fieldset>
+
+            <div class="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+              <div class="flex items-center justify-between gap-3">
+                <label for="synology-photos" class="font-medium">{{
+                  t('cronform.toggle.synologyPhotos')
+                }}</label>
+                <ToggleSwitch v-model="form.config.synologyPhotos" inputId="synology-photos" />
+              </div>
+              <p class="text-[12px] text-slate-500 dark:text-slate-400">
+                {{ t('cronform.toggle.synologyPhotosHint') }}
+              </p>
+              <p class="text-[12px] text-slate-500 dark:text-slate-400">
+                {{ t('cronform.toggle.synologyPhotosOffHint') }}
+              </p>
+            </div>
+
+            <div class="space-y-1">
+              <h3 class="text-[13px] font-medium">{{ t('cronform.retention.scanTitle') }}</h3>
+              <p class="text-[12px] text-slate-500 dark:text-slate-400">
+                {{ t('cronform.retention.scanHint') }}
+              </p>
+            </div>
             <OptionCard
               v-for="card in syncModeCards"
               :key="card.value"
@@ -423,19 +477,6 @@ watch(
               </div>
             </div>
 
-            <label class="flex items-center gap-2 text-[13px] text-slate-600 dark:text-slate-300">
-              <Checkbox v-model="form.config.synologyPhotos" binary />
-              <span>{{ t('cronform.toggle.synologyPhotos') }}</span>
-            </label>
-            <p class="text-[12px] text-slate-500">{{ t('cronform.toggle.synologyPhotosHint') }}</p>
-            <label class="flex items-center gap-2">
-              <Checkbox v-model="form.config.syncCloudDeletes" binary />
-              <span>{{ t('cronform.toggle.syncCloudDeletes') }}</span>
-            </label>
-            <p class="text-[12px] text-slate-500">
-              {{ t('cronform.toggle.syncCloudDeletesHint') }}
-            </p>
-
             <div class="space-y-2">
               <div class="flex items-center justify-between">
                 <label class="block text-[13px] font-medium text-slate-500 dark:text-slate-400">{{
@@ -461,19 +502,23 @@ watch(
               <InputText
                 v-model="form.config.targetPath"
                 :placeholder="
-                  useExpressionPath ? '/app/download/${album}/${fileName}' : '/app/download'
+                  !form.config.synologyPhotos && useExpressionPath
+                    ? '/app/download/${album}/${fileName}'
+                    : '/app/download'
                 "
                 class="w-full"
-                @focus="useExpressionPath && openExpressionHelp()"
+                @focus="!form.config.synologyPhotos && useExpressionPath && openExpressionHelp()"
               />
               <div v-if="formErrors.targetPath" class="text-[13px] text-red-600">
                 {{ formErrors.targetPath }}
               </div>
               <div class="text-[13px] text-slate-500 dark:text-slate-400">
                 {{
-                  useExpressionPath
-                    ? t('cronform.field.targetPathExpressionHint')
-                    : t('cronform.field.targetPathHint')
+                  form.config.synologyPhotos
+                    ? t('cronform.field.targetPathPhotosHint')
+                    : useExpressionPath
+                      ? t('cronform.field.targetPathExpressionHint')
+                      : t('cronform.field.targetPathHint')
                 }}
               </div>
               <Message

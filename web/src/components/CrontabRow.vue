@@ -370,7 +370,7 @@ onUnmounted(() => {
   <div class="group/row">
     <!-- Collapsed row -->
     <div
-      class="flex h-12 cursor-pointer items-center gap-3 px-4 transition-colors hover:bg-slate-100/70 dark:hover:bg-slate-800/50"
+      class="flex min-h-12 cursor-pointer items-center gap-3 px-4 py-2 transition-colors hover:bg-slate-100/70 dark:hover:bg-slate-800/50"
       :class="expanded ? 'bg-slate-100/60 dark:bg-slate-800/40' : ''"
       @click="emit('toggleExpand')"
     >
@@ -401,10 +401,32 @@ onUnmounted(() => {
       </button>
 
       <!-- name + description -->
-      <div class="flex min-w-0 flex-1 items-baseline gap-2">
+      <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
         <span class="truncate text-[14px] font-medium text-slate-800 dark:text-slate-100">
           {{ crontab.name }}
         </span>
+        <Tag
+          :value="
+            t(
+              crontab.config.syncCloudDeletes
+                ? 'cronform.retention.mirror'
+                : 'cronform.retention.backup',
+            )
+          "
+          :severity="crontab.config.syncCloudDeletes ? 'warn' : 'info'"
+          class="text-xs!"
+        />
+        <Tag
+          :value="
+            t(
+              crontab.config.synologyPhotos
+                ? 'cronform.retention.photosOn'
+                : 'cronform.retention.photosOff',
+            )
+          "
+          :severity="crontab.config.synologyPhotos ? 'success' : 'secondary'"
+          class="text-xs!"
+        />
         <span
           v-if="crontab.description"
           class="hidden truncate text-[13px] text-slate-500 dark:text-slate-400 xl:inline"

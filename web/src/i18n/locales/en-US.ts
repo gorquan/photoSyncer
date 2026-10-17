@@ -343,7 +343,7 @@ const messages: typeof zh = {
     step: {
       basic: 'Basic Info',
       scope: 'Sync Scope',
-      mode: 'Sync Mode',
+      mode: 'Storage & Sync',
       schedule: 'Schedule & Storage',
     },
     badge: {
@@ -365,6 +365,8 @@ const messages: typeof zh = {
       expressionExample: 'e.g. 0 0 23 * * ? runs every day at 23:00',
       timeZone: 'Time zone',
       targetPath: 'Save path',
+      targetPathPhotosHint:
+        'Enter a mounted fixed root, such as /photos. Files are grouped below it by provider, account and library. Path templates are not used.',
       targetPathHint:
         'When running in a container, make sure this path is mapped to the host. A folder is created under it for each album.',
       targetPathMountWarning:
@@ -375,18 +377,31 @@ const messages: typeof zh = {
       albums: 'Linked albums',
       albumsPlaceholder: 'Select albums',
     },
+    retention: {
+      title: 'Local retention mode',
+      backup: 'Backup mode',
+      mirror: 'Mirror mode',
+      backupHint:
+        'Download and update photos. Keep local exports and retained originals after cloud deletion.',
+      mirrorHint:
+        'After confirmed cloud deletion, permanently remove this task’s managed exports and originals (including older versions) with no other task references. Live Photo components are removed together. Cloud files are never deleted by this app.',
+      scanTitle: 'Scan strategy',
+      scanHint:
+        'Choose how to check cloud additions and updates, independently of retention and Photos compatibility.',
+      photosOn: 'Synology Photos: on',
+      photosOff: 'Synology Photos: off',
+    },
     toggle: {
       downloadImages: 'Download photos',
       downloadVideos: 'Download videos',
       downloadLivePhotos: 'Download Apple Live Photo motion',
       downloadLivePhotosHint:
         'Include the paired video with photos, independently of ordinary videos. Xiaomi motion stays inside the original image.',
-      syncCloudDeletes: 'Sync cloud deletions',
-      syncCloudDeletesHint:
-        'Confirmed cloud deletions permanently remove managed photo/video exports and retained originals, including older versions without another task reference. Live Photo components are removed together. This does not delete cloud content.',
-      synologyPhotos: 'Synology Photos layout',
+      synologyPhotos: 'Synology Photos compatibility',
       synologyPhotosHint:
-        'Use a fixed destination root. Store one original per account/library; Live Photo image and video share a folder and basename. HEIC / HEVC preview depends on Image Assistant, NAS and client capabilities. Existing files are not migrated; use a new empty folder.',
+        'On: use a fixed export root with provider, account and library folders. Apple Live Photo components share a basename; Xiaomi motion photos retain their original structure.',
+      synologyPhotosOffHint:
+        'Off: use regular album paths or a path template. Switching does not move existing files; choose a new empty folder. HEIC / HEVC previews still depend on the NAS and client.',
       downloadAudios: 'Download recordings',
       notify: 'Send notifications',
       enabled: 'Scheduled trigger',
