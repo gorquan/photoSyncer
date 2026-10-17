@@ -816,6 +816,8 @@ export default {
       methodManualDesc: '手动填写 userId 与 PassToken，获取方式参考项目主页介绍',
       adpHint: '同步前请先在小米账号中关闭「高级数据保护」',
       qrTitle: '扫码登录小米账号',
+      qrRenewalHint:
+        '正在更新小米账号 {userId} 的授权。请使用同一个小米账号扫码，保留现有账号和同步任务。',
       qrTip: '使用小米手机或平板的「设置 > 小米账号」扫码，或使用其他扫码工具打开后完成授权',
       qrGenerating: '正在获取二维码…',
       qrWaiting: '等待扫码确认…',

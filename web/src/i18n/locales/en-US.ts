@@ -849,6 +849,8 @@ const messages: typeof zh = {
         'Enter userId and PassToken manually — see the project homepage for how to obtain them',
       adpHint: 'Turn off "Advanced Data Protection" in your Xiaomi account first',
       qrTitle: 'Scan to sign in with Xiaomi account',
+      qrRenewalHint:
+        'Renewing authorization for Xiaomi account {userId}. Scan with the same Xiaomi account to keep the existing account and sync tasks.',
       qrTip:
         'Scan with your Xiaomi phone or tablet via Settings > Xiaomi Account, or open the link with any QR scanner to authorize',
       qrGenerating: 'Fetching QR code…',
