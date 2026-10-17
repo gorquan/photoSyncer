@@ -18,11 +18,9 @@
 
 ## 从源码部署
 
-需要 Git、Node.js 24.20+（24 系列）、JDK 25、Docker。以下命令在仓库根目录执行：
+需要 Git、Node.js 24.20+（24 系列）、JDK 25、Docker。先克隆本仓库，以下命令在仓库根目录执行：
 
 ```bash
-# 克隆本仓库
-cd photoSyncer
 (cd web && npm install && npm run build)
 mkdir -p server/src/main/resources/static
 cp -R web/dist/. server/src/main/resources/static/
