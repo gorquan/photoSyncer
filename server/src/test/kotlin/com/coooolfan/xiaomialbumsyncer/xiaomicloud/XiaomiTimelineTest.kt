@@ -15,8 +15,20 @@ class XiaomiTimelineTest {
         assertEquals(mapOf(LocalDate.of(2026, 10, 10) to 2L), timeline.dayCount)
     }
 
+    @Test fun integralIndexHashesAreNormalizedWithoutLosingPrecisionOrSign() {
+        for (hash in listOf("0", "123456789", "-123456789", "9223372036854775808")) {
+            val numeric = parseAlbumTimeline(mapper.readTree("""{"code":0,"data":{"indexHash":$hash,"dayCount":{"20261010":2}}}"""))
+            val textual = parseAlbumTimeline(mapper.readTree("""{"code":0,"data":{"indexHash":"$hash","dayCount":{"20261010":2}}}"""))
+            assertEquals(hash, numeric.indexHash)
+            assertEquals(textual, numeric)
+        }
+    }
+
     @Test fun malformedTimelinesCannotBePersistedAsSuccessfulEmptySnapshots() {
         for (data in listOf(
+            """{"indexHash":null,"dayCount":{}}""", """{"indexHash":true,"dayCount":{}}""",
+            """{"indexHash":1.5,"dayCount":{}}""", """{"indexHash":{},"dayCount":{}}""",
+            """{"indexHash":[],"dayCount":{}}""", """{"indexHash":" ","dayCount":{}}""",
             """{}""", """{"indexHash":"" ,"dayCount":{}}""", """{"indexHash":"hash"}""",
             """{"indexHash":"hash","dayCount":[]}""", """{"indexHash":"hash","dayCount":{"20261010":"2"}}""",
             """{"indexHash":"hash","dayCount":{"20261010":-1}}""", """{"indexHash":"hash","dayCount":{"20261010":1.5}}""",
