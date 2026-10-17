@@ -39,9 +39,10 @@ class ICloudDeletionTest {
         )) assertThrows(IllegalArgumentException::class.java, { parseICloudPresence(json(response), "asset") }, response)
     }
 
-    @Test fun completeRankPagesMustContainRecognizedLiveRecordsAndExplicitEnd() {
+    @Test fun completePagesMustContainRecognizedLiveRecordsAndValidContinuation() {
         validateICloudEnumerationPage(json("""{"records":[]}"""))
         validateICloudEnumerationPage(json("""{"records":[{"recordName":"asset","recordType":"CPLAsset"},{"recordName":"master","recordType":"CPLMaster"}]}"""))
+        validateICloudEnumerationPage(json("""{"records":[{"recordName":"asset","recordType":"CPLAsset"}],"continuationMarker":"opaque"}"""))
         for (response in listOf(
             "{}", """{"records":{}}""", """{"records":[],"continuationMarker":"more"}""",
             """{"records":[{"recordName":"master","recordType":"CPLMaster"}]}""",
