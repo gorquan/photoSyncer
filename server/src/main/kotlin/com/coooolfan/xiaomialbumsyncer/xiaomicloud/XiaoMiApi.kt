@@ -31,6 +31,11 @@ class XiaoMiApi(private val tokenManager: TokenManager) {
 
     private val log = LoggerFactory.getLogger(XiaoMiApi::class.java)
 
+    /** A single gallery page verifies authorization without changing local albums or media. */
+    fun checkAuthentication(accountId: Long) {
+        getJson(accountId, apiProperties.url("gallery/user/album/list?pageNum=0&pageSize=1&isShared=false&numOfThumbnails=0&ts=${System.currentTimeMillis()}"))
+    }
+
     fun fetchAllAlbums(accountId: Long): List<Album> {
         val allAlbums = mutableListOf<Album>()
         var pageNum = 0
@@ -252,16 +257,17 @@ class XiaoMiApi(private val tokenManager: TokenManager) {
     }
 
     // 读完即关闭响应，避免后续 saveToFile 等长耗时操作期间占用连接（okhttp3 会报 warning）
-    private fun getJson(accountId: Long, url: String): JsonNode {
+    private fun getJson(accountId: Long, url: String): JsonNode =
+        tokenManager.authStatus.observeXiaomi(accountId) {
         val req = Request.Builder()
             .url(url)
             .ua()
             .authHeader(tokenManager.getAuthPair(accountId))
             .get()
             .build()
-        return client().executeWithRetry(req).use { res ->
+        client().executeWithRetry(req).use { res ->
             val tree = runCatching { Solon.context().objectMapper.readTree(res.body) }.getOrElse {
-                if (res.code == 401 || res.code == 403) error("小米账号授权失效，请重新扫码更新账号凭据后重试")
+                if (res.code == 401 || res.code == 403) throw com.coooolfan.xiaomialbumsyncer.exception.XiaomiAuthenticationException()
                 throwIfNotSuccess(res.code)
                 error("小米接口返回无效 JSON")
             }

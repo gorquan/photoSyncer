@@ -122,6 +122,17 @@ internal class ICloudClient(val credentials: ICloudCredentials, endpoints: Endpo
         if (!login()) throw ICloudApiException(409)
     }
 
+    /** Revalidate the saved session rather than accepting the in-memory ten-minute cache. */
+    @Synchronized fun checkAuthentication() {
+        validatedAt = 0
+        ensureAuthenticated()
+        val zones = cloud("zones/list", emptyMap<String, String>()).path("zones")
+        require(zones.isArray && zones.any {
+            !it.path("deleted").asBoolean() &&
+                (it.at("/zoneID/zoneName").asText() == "PrimarySync" || it.at("/zoneID/zoneName").asText().startsWith("SharedSync-"))
+        }) { "iCloud 照片图库不可用，请检查网页数据访问和高级数据保护设置" }
+    }
+
     private fun accountLogin() {
         accountData = request("$setup/accountLogin", mapOf("accountCountryCode" to credentials.headers["X-Apple-ID-Account-Country"],
             "dsWebAuthToken" to credentials.headers["X-Apple-Session-Token"], "extended_login" to true,

@@ -21,7 +21,8 @@ import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
 @Managed
-class TokenManager(private val sql: KSqlClient, private val notifyService: NotifyService) {
+class TokenManager(private val sql: KSqlClient, private val notifyService: NotifyService,
+    val authStatus: com.coooolfan.xiaomialbumsyncer.service.AccountAuthStatusService = com.coooolfan.xiaomialbumsyncer.service.AccountAuthStatusService(sql)) {
 
     @Inject
     private lateinit var apiProperties: XiaomiApiProperties
@@ -125,7 +126,7 @@ class TokenManager(private val sql: KSqlClient, private val notifyService: Notif
         // passToken 失效的特征：响应的 Set-Cookie 不再下发 serviceToken
         if (serviceToken == null) {
             onPassTokenInvalid(account)
-            error("小米登录凭据已失效，请重新扫码更新账号")
+            throw com.coooolfan.xiaomialbumsyncer.exception.XiaomiAuthenticationException()
         }
 
         log.info("serviceToken 获取成功")

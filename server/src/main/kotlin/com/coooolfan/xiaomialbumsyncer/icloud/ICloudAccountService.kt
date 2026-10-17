@@ -11,7 +11,8 @@ import org.noear.solon.annotation.Managed
 import java.util.concurrent.ConcurrentHashMap
 
 @Managed
-class ICloudAccountService(private val sql: KSqlClient, private val notifications: com.coooolfan.xiaomialbumsyncer.service.NotifyService) {
+class ICloudAccountService(private val sql: KSqlClient, private val notifications: com.coooolfan.xiaomialbumsyncer.service.NotifyService,
+    private val authStatus: com.coooolfan.xiaomialbumsyncer.service.AccountAuthStatusService = com.coooolfan.xiaomialbumsyncer.service.AccountAuthStatusService(sql)) {
     private val mapper = jacksonObjectMapper()
     private val alerted = ConcurrentHashMap.newKeySet<Long>()
     private val clients = ConcurrentHashMap<Long, ICloudClient>()
@@ -33,13 +34,19 @@ class ICloudAccountService(private val sql: KSqlClient, private val notification
         val credentials = if (previous?.domain == input.domain) previous.copy(password = input.password)
             else ICloudCredentials(appleId, input.password, input.domain)
         val client = ICloudClient(credentials)
-        val ready = try { client.login() } catch (e: ICloudApiException) { throw BadRequestException(e.message.orEmpty()) }
+        val started = java.time.Instant.ofEpochMilli(System.currentTimeMillis())
+        val ready = try { client.login() } catch (e: Exception) {
+            if (e is ICloudApiException) throw BadRequestException(e.message.orEmpty())
+            throw e
+        }
         val account = sql.saveCommand(ProviderAccount {
             if (existing != null) id = existing.id
             provider = CloudProvider.ICLOUD
             userId = appleId
             nickname = input.nickname.trim().ifBlank { appleId }
             this.credentials = mapper.writeValueAsString(client.credentials.copy(state = if (ready) "READY" else "MFA_REQUIRED"))
+            authState = if (ready) AccountAuthState.READY else AccountAuthState.MFA_REQUIRED
+            authCheckedAt = started
         }, if (existing == null) SaveMode.INSERT_ONLY else SaveMode.UPDATE_ONLY).execute().modifiedEntity
         clients[account.id] = client
         if (ready) alerted.remove(account.id)
@@ -66,22 +73,29 @@ class ICloudAccountService(private val sql: KSqlClient, private val notification
             ICloudClient(mapper.readValue<ICloudCredentials>(account.credentials))
         }
         synchronized(client) {
+            val started = java.time.Instant.ofEpochMilli(System.currentTimeMillis())
             try {
                 val result = action(client)
                 if (!client.mfaRequired) alerted.remove(accountId)
-                persist(account, client, if (client.mfaRequired) "MFA_REQUIRED" else "READY")
+                persist(account, client, if (client.mfaRequired) "MFA_REQUIRED" else "READY",
+                    if (client.mfaRequired) AccountAuthState.MFA_REQUIRED else AccountAuthState.READY, started)
                 return result
             } catch (e: ICloudApiException) {
                 val state = when {
-                    verifying || e.status == 409 -> "MFA_REQUIRED"
+                    e.status == 409 || (verifying && e.status == 401) -> "MFA_REQUIRED"
                     e.status == 401 -> "SESSION_EXPIRED"
                     else -> null
                 }
-                persist(account, client, state ?: mapper.readValue<ICloudCredentials>(account.credentials).state)
+                persist(account, client, state ?: mapper.readValue<ICloudCredentials>(account.credentials).state,
+                    authFailureState(e, verifying), started)
                 if (state != null && !verifying && alerted.add(accountId)) {
                     runCatching { notifications.sendPassTokenExpired(account) }
                 }
                 throw BadRequestException(e.message.orEmpty())
+            } catch (e: Exception) {
+                persist(account, client, mapper.readValue<ICloudCredentials>(account.credentials).state,
+                    AccountAuthState.CHECK_FAILED, started)
+                throw e
             }
         }
     }
@@ -91,16 +105,21 @@ class ICloudAccountService(private val sql: KSqlClient, private val notification
         alerted.remove(accountId)
     }
 
-    private fun persist(account: ProviderAccount, client: ICloudClient, state: String) {
+    private fun persist(account: ProviderAccount, client: ICloudClient, state: String,
+                        authState: AccountAuthState, checkedAt: java.time.Instant) {
         val credentials = mapper.writeValueAsString(client.credentials.copy(state = state))
-        if (mapper.readTree(account.credentials) == mapper.readTree(credentials)) return
-        sql.saveCommand(ProviderAccount {
-            id = account.id
-            this.credentials = credentials
-        }, SaveMode.UPDATE_ONLY).execute()
+        val changed = mapper.readTree(account.credentials) != mapper.readTree(credentials)
+        authStatus.record(account, authState, checkedAt, credentials.takeIf { changed })
     }
+
 }
 
 data class ICloudLoginInput(val appleId: String, val password: String, val domain: String = "com", val nickname: String = "", val accountId: Long? = null)
 data class ICloudVerifyInput(val code: String)
 data class ICloudAccountStatus(val accountId: Long, val state: String, val domain: String)
+
+internal fun authFailureState(error: Exception, verifying: Boolean = false): AccountAuthState = when {
+    error is ICloudApiException && (error.status in setOf(409, 412) || (verifying && error.status == 401)) -> AccountAuthState.MFA_REQUIRED
+    error is ICloudApiException && error.status in setOf(401, 421, 450) -> AccountAuthState.SESSION_EXPIRED
+    else -> AccountAuthState.CHECK_FAILED
+}

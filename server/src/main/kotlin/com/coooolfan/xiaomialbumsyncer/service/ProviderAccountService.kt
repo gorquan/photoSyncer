@@ -18,12 +18,29 @@ import org.noear.solon.annotation.Managed
 class ProviderAccountService(
     private val sql: KSqlClient,
     private val tokenManager: TokenManager,
-    private val icloud: com.coooolfan.xiaomialbumsyncer.icloud.ICloudAccountService
+    private val icloud: com.coooolfan.xiaomialbumsyncer.icloud.ICloudAccountService,
+    private val xiaomi: com.coooolfan.xiaomialbumsyncer.xiaomicloud.XiaoMiApi
 ) {
     fun listAll(fetcher: Fetcher<ProviderAccount>): List<ProviderAccount> {
         return sql.executeQuery(ProviderAccount::class) {
             select(table.fetch(fetcher))
         }
+    }
+
+    fun checkAuthentication(id: Long, fetcher: Fetcher<ProviderAccount>): ProviderAccount {
+        val account = sql.findById(ProviderAccount::class, id)
+            ?: throw com.coooolfan.xiaomialbumsyncer.exception.BadRequestException("账号不存在")
+        val started = java.time.Instant.ofEpochMilli(System.currentTimeMillis())
+        try {
+            if (account.provider == CloudProvider.XIAOMI) xiaomi.checkAuthentication(id)
+            else icloud.withClient(id) { it.checkAuthentication() }
+        } catch (e: Exception) {
+            // A provider failure is a check result. Do not hide failures to persist that result.
+            val current = sql.findById(ProviderAccount::class, id) ?: throw e
+            if (current.credentials == account.credentials &&
+                (current.authCheckedAt == null || current.authCheckedAt!!.isBefore(started))) throw e
+        }
+        return sql.findById(fetcher, id) ?: throw com.coooolfan.xiaomialbumsyncer.exception.BadRequestException("账号不存在")
     }
 
     /**
@@ -57,7 +74,11 @@ class ProviderAccountService(
         val existing = sql.findById(ProviderAccount::class, account.id)
             ?: throw IllegalArgumentException("账号不存在，ID: ${account.id}")
         require(existing.provider == CloudProvider.XIAOMI) { "请使用 iCloud 登录接口更新该账号" }
-        val result = sql.saveCommand(account, SaveMode.UPDATE_ONLY).execute(fetcher)
+        val refreshed = com.coooolfan.xiaomialbumsyncer.model.ProviderAccount(account) {
+            authState = com.coooolfan.xiaomialbumsyncer.model.AccountAuthState.UNKNOWN
+            authCheckedAt = null
+        }
+        val result = sql.saveCommand(refreshed, SaveMode.UPDATE_ONLY).execute(fetcher)
         tokenManager.invalidateToken(account.id)
         return result.modifiedEntity
     }

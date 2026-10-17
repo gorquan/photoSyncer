@@ -37,6 +37,7 @@ class ApiE2eSuite {
     private fun executeWorkflow(api: ApiClient, mock: MockXiaomiApiServer, workDir: Path) {
         assertFalse(api.json(api.get("/api/system-config").expect(200)).path("init").asBoolean())
         api.post("/api/system-config", mapOf("password" to "e2e-password")).expect(200)
+        api.post("/api/account/1/check-auth").expect(401)
         api.get("/api/token?password=${api.encode("wrong-password")}").expect(401)
         api.get("/api/token?password=${api.encode("e2e-password")}").expect(200)
 
@@ -84,6 +85,8 @@ class ApiE2eSuite {
                 )
             ).expect(200)
         )
+        assertEquals("UNKNOWN", account.path("authState").asText())
+        assertTrue(account.path("authCheckedAt").isNull || account.path("authCheckedAt").isMissingNode)
         assertFalse(account.has("credentials"))
         assertFalse(account.has("passToken"))
         val accountId = account.path("id").asLong()
@@ -99,6 +102,13 @@ class ApiE2eSuite {
             )
         ).expect(200)
 
+        val checkedAccount = api.json(api.post("/api/account/$accountId/check-auth").expect(200))
+        assertEquals("READY", checkedAccount.path("authState").asText())
+        assertTrue(java.time.Instant.parse(checkedAccount.path("authCheckedAt").asText()).isAfter(java.time.Instant.EPOCH))
+        assertFalse(checkedAccount.toString().contains("mock-pass-token"))
+        assertFalse(checkedAccount.has("credentials"))
+        api.post("/api/account/999999/check-auth").expect(400)
+        assertEquals(0, api.json(api.get("/api/album").expect(200)).size(), "Authentication checks must not create local albums")
         val albums = api.json(api.get("/api/album/latest/$accountId").expect(200))
         assertEquals(3, albums.size())
         val cameraAlbumId = findAlbumId(albums, "1")
@@ -169,7 +179,7 @@ class ApiE2eSuite {
         assertEquals(1, javax.imageio.ImageIO.read(downloadedFile.toFile()).width)
         mock.awaitRequest("/_control/v1/notify", Duration.ofSeconds(10))
 
-        assertEquals(1, mock.routeCount("/gallery/user/album/list"))
+        assertEquals(2, mock.routeCount("/gallery/user/album/list"))
         assertTrue(mock.routeCount("/gallery/user/galleries") >= 2)
         assertEquals(0, mock.routeCount("/gallery/user/timeline"))
         assertTrue(mock.routeCount("/gallery/storage") >= 1)

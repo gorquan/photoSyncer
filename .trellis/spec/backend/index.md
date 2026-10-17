@@ -11,3 +11,5 @@ See [native motion photo contracts](motion-photo.md) for XMP range validation an
 See [cloud deletion contracts](cloud-deletion.md) for provider evidence, deletion journals, shared ownership and cleanup status.
 
 See [deployment contracts](deployment.md) for fork builds, persistent mounts, migration and validation cleanup.
+
+See [account authentication](account-auth.md) for persisted status evidence, manual checks and credential-version guards.
