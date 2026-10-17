@@ -1,12 +1,19 @@
-name: xiaomi-album-syncer
+name: photosyncer
 
 services:
   app:
-    image: coolfan1024/xiaomi-album-syncer:latest
-    container_name: xiaomi-album-syncer
+    image: photosyncer:local
+    build:
+      context: .
+      dockerfile: Dockerfile.jvm
+    container_name: photosyncer
     ports:
-      - "8232:8080"
+      - "${PHOTO_SYNCER_PORT:-8232}:8080"
+    environment:
+      TZ: Asia/Shanghai
+      APP_DB_PATH: /app/db/xiaomialbumsyncer.db
+      PHOTO_SYNCER_MEDIA_ROOT: /app/db/media
     volumes:
-      - ~/xiaomi-album-syncer/download:/app/download
-      - ~/xiaomi-album-syncer/db:/app/db
+      - ${PHOTO_SYNCER_STATE_DIR:-../db}:/app/db
+      - ${PHOTO_SYNCER_EXPORT_DIR:-../download}:/photos
     restart: unless-stopped

@@ -1,257 +1,123 @@
-# <img src="./static/xiaomi-album-syncer-logo.png" alt="logo" width="20rem"> photoSyncer
+# photoSyncer
 
-[![GitHub Stars](https://img.shields.io/github/stars/Coooolfan/XiaomiAlbumSyncer?style=flat)](https://github.com/Coooolfan/XiaomiAlbumSyncer/stargazers) [![Docker Pulls](https://img.shields.io/docker/pulls/coolfan1024/xiaomi-album-syncer?style=flat)](https://hub.docker.com/r/coolfan1024/xiaomi-album-syncer)
+将小米云相册、录音与 Apple iCloud Photos 同步到本地，支持定时增量下载和 Synology Photos 展示。
 
-发了 **issues** 记得常回来看看有没有回复，或者 >>>>> **[QQ 群聊：1059332701](https://qm.qq.com/q/H2trW6JWM4)**
+本项目基于 [XiaomiAlbumSyncer](https://github.com/Coooolfan/XiaomiAlbumSyncer) 开发。**本仓库新增的 iCloud、群晖 Photos 与删除同步功能，需要使用本仓库构建产物；上游镜像不能代替。**
 
-![banner](./static/banner.avif)
+## 功能
 
-发了 **issues** 记得常回来看看有没有回复，或者 >>>>> **[QQ 群聊：1059332701](https://qm.qq.com/q/H2trW6JWM4)**
+- 小米与 iCloud 多账号绑定、相册选择、定时及手动同步。
+- 全量、时间线增量、位点增量模式；缺失或损坏的托管文件可在后续同步修复。
+- 群晖 Photos 模式按厂商、账号、图库隔离目录，同一资源出现在多个所选相册时只导出一份。
+- Apple Live Photo 保留图片和配套视频的同名配对及元数据；小米动态照片保留原始单文件结构。
+- 原件库与展示文件分开保存，支持来源校验、本地 SHA-256 校验、照片和视频时间信息补齐。
+- 可选择同步云端删除，或保留本地文件作备份。
+- Web 管理界面、[路径表达式](docs/expression-target-path.md)、[HTTPS](docs/ssl-suppot.md) 和 [Passkey](docs/passkey-login.md)。
 
-支持小米云相册与 Apple iCloud 照片同步。群晖 Photos 的配置与支持范围见 [兼容说明](docs/synology-photos.md)。
+群晖兼容范围、实机结果与限制见 [Synology Photos 使用说明](docs/synology-photos.md)。HEIC／视频预览取决于 Photos、Synology Image Assistant 和客户端解码能力；云端虚拟相册、收藏及人脸关系不自动迁移。
 
-## Features/功能
+## 从源码部署
 
-- [x] 📸 下载指定相册中的所有资产
-- [x] ⏭️ 自动跳过已下载的资产
-- [x] 🎵 支持下载录音
-- [x] 🔄 自动刷新 Cookie
-- [x] ⏰ 支持定时任务
-- [x] 📥 支持增量下载（超快）
-- [x] 🗂️ 支持按相册分类存储照片
-- [x] 🌍 友好的 Web UI
-- [x] 📅 填充照片和视频的 Exif 时间信息
-- [x] 📅 填充照片和视频的文件系统时间
-- [x] 👥 支持多小米账号
-- [x] 📃 表达式插值文件下载路径 **>>> [点此查看详情](./docs/expression-target-path.md) <<<**
-- [x] 🔒 SSL 支持 **>>> [点此查看详情](./docs/ssl-suppot.md) <<<**
-- [x] 🛡️ Passkey 支持 **>>> [点此查看详情](./docs/passkey-login.md) <<<**
-
-> [!CAUTION] 
-> 此项目已于 `0.3.0` 完成重构。新版目前仅提供 Web UI，部署方式提供 Docker、JVM、原生二进制版本。旧版 CLI 工具仍然可用，可前往 [0.2.1 releases](https://github.com/Coooolfan/XiaomiAlbumSyncer/releases/tag/0.2.1) 下载。
->
-> 如需从旧版迁移数据，请参考 [从 v2 迁移](#从v2迁移) 一节。
-
-## 部署
-
-自 0.3.0 版本起，程序会尝试兼容旧版本的数据库。在**跨多个版本升级**时，建议先浏览 Releases 页面，查看每个版本的更新内容，以及可能的数据库变更和破坏性更新。
-
-**不建议使用各种自动升级工具。**
-
-> 原生版本和 jvm 版本的逻辑实现相同，数据库可以通用
-
-### 二进制部署 (Binary)
-
-此部署方式无需安装 Java 环境，直接下载对应平台的可执行文件即可运行。
-
-1.  **下载**: 前往 [Releases](https://github.com/Coooolfan/XiaomiAlbumSyncer/releases) 页面下载对应系统的二进制文件压缩包（Linux/macOS/Windows）。
-    *   **Linux x64**: `xiaomi-album-syncer-linux-x64-vX.X.X.zip`
-    *   **Linux arm64**: `xiaomi-album-syncer-linux-arm64-vX.X.X.zip`
-    *   **macOS x64**: `xiaomi-album-syncer-macos-x64-vX.X.X.zip`
-    *   **macOS arm64**: `xiaomi-album-syncer-macos-arm64-vX.X.X.zip`
-    *   **Windows x64**: `xiaomi-album-syncer-windows-x64-vX.X.X.exe.zip`
-    *   **Windows arm64**: GraalVM 尚不支持 windows on arm
-    
-2.  **解压**: 解压下载的压缩包，得到可执行文件。
-
-3.  **运行**:
-    *   **Linux / macOS**:
-        ```bash
-        # 赋予执行权限 (文件名后的版本号视具体情况而异)
-        chmod +x xiaomi-album-syncer-linux-x64-v0.3.0
-        # 运行
-        ./xiaomi-album-syncer-linux-x64-v0.3.0
-        ```
-    *   **Windows**: 双击运行解压后的 `xiaomi-album-syncer-windows-x64-v0.3.0.exe`。
-
-4.  **访问**: 打开浏览器访问 `http://localhost:8080`。
-
-> [!NOTE]
-> 如果在 Windows 下运行，且用户名为中文，可能会遇到类似于 `java.lang.UnsatisfiedLinkError: Can't load library` 或者 `Failed to load native library: ... sqlite-3.50.3.0-...-sqlitejdbc.dll`
->
-> 这是由于系统的临时路径存在非 ASCII 字符导致的。可以使用 `-Dorg.sqlite.tmpdir=C:\sqlite_tmp` 参数手动指定临时路径。
->
-> 例如可以打开控制后使用命令 `.\xiaomi-album-syncer-windows-x64-v0.3.0.exe -Dorg.sqlite.tmpdir=C:\sqlite_tmp` 执行
-
-
-### Docker
-
-1. 拉起 docker 容器
-
-    ```bash
-    # 使用默认版本 (JVM)
-    docker run -d \
-      -p 8232:8080 \
-      --name xiaomi-album-syncer \
-      -v ~/xiaomi-album-syncer/download:/app/download \
-      -v ~/xiaomi-album-syncer/db:/app/db \
-      coolfan1024/xiaomi-album-syncer:latest
-    ```
-    
-    或者使用 Native 版本：
-
-    ```bash
-    # 使用 Native 版本
-    docker run -d \
-      -p 8232:8080 \
-      --name xiaomi-album-syncer \
-      -v ~/xiaomi-album-syncer/download:/app/download \
-      -v ~/xiaomi-album-syncer/db:/app/db \
-      coolfan1024/xiaomi-album-syncer:latest-native
-    ```
-    
-2. 访问 Web UI
-
-   打开浏览器，访问 `http://localhost:8232`（如果你在本地运行 Docker），或者替换为你的服务器 IP 地址和端口。
-
-### Docker Compose
-
-1. 下载`docker-compsoe.yml`文件
-    ```bash
-    mkdir -p ~/xiaomi-album-syncer
-    cd ~/xiaomi-album-syncer
-    curl -O https://raw.githubusercontent.com/Coooolfan/XiaomiAlbumSyncer/main/docker/docker-compose.yml
-    ```
-2. 按需编辑`docker-compose.yml`文件
-   - JVM 版本(默认)：版本号或者 latest。eg. `0.8.0` `latest`
-   - Native 版本：在版本号或者 latest 后添加 **-native** 后缀。eg. `0.8.0-native` `latest-native`
-
-3. 启动服务
-    ```bash
-    docker compose up -d
-    ```
-4. 访问 Web UI
-
-  打开浏览器，访问 `http://localhost:8232`（如果你在本地运行 Docker），或者替换为你的服务器 IP 地址和端口。
-
-## 反向代理（可选）
-
-**强烈建议在任何情况下访问此服务都启用 HTTPS 。**
-
-此项目的 Web UI 与 API 仅使用了简单的 Restful API 构建，无复杂有状态长连接。
-
-## 使用
-
-### 初始化
-
-访问 `http://localhost:8232`（下文假设您在本地访问默认 Docker Compose 部署的版本，否则请访问您配置的真实端点） ，输入一个强密码（此密码仅用于访问此项目，与任何外部服务或者小米无关），完成此项目的初始化。
-
-
-### 获取 PassToken 与 UserId
-
-**方式一：扫码登录（推荐）**
-
-访问 `http://localhost:8232/#/dashboard/setting` ，在「小米账号」卡片中点击 `扫码添加`，使用小米手机或平板的「设置 > 小米账号」扫码确认即可，账号凭据会自动写入。对已存在的账号再次扫码可直接刷新其 passToken。
-
-**方式二：手动提取**
-
-1. 登录[小米云服务](https://i.mi.com/)
-2. **[访问一次相册页面](https://i.mi.com/gallery/h5#/)**
-3. 如果出现手机验证，勾选 `信任此设备`
-4. 点击右上角头像，点击 `我的小米账号`，进入 `我的小米账号` 页面
-5. 打开浏览器 开发者工具
-6. 选中 应用程序/Application 一栏。复制对应的两个 `passToken` 与 `userId` 字段值
-![getpassanduserid](static/copybydevtool.avif)
-即图中的 4️⃣ 和 5️⃣ 对应的黄底内容。
-
-### 设置 PassToken 与 UserId
-
-访问 `http://localhost:8232/#/dashboard/setting` ，设置 PassToken 与 UserId。
-
-### 获取所有相册
-
-访问 `http://localhost:8232/#/dashboard/schedule` 选择 `从远程更新整个相册列表`
-
-![fetchlastestalbums](static/fetchlastestalbums.avif)
-
-此接口为同步接口，具体时长取决于相册数量和网络情况。请耐心等待。
-
-> [!WARNING] 
-> 如果此获取数据失败，大概率是 passToken 和 userId 没有正确设置的导致的。如果已确保两个配置已经正确配置，请前往 Issues 页面发布 issue 并附上相关日志。
-
-### 创建计划任务
-
-访问 `http://localhost:8232/#/dashboard/schedule` 单击 任务计划 卡片右上角的绿色 ➕ 号。按需要填写各项配置。
-
-![democrontab](./static/democrontab.avif)
-
-> [!NOTE]
-> 图中的 Cron 表达式为 `0 0 23 * * ?`，即北京时间每天 23 点执行一次。
-> 
-> 更多 Cron 表达式请参考 [Cron 表达式](https://cron.qqe2.com/)。
-
-程序会在设置的时间执行任务。任务执行时，会自动刷新选中的相册列表，并**增量地**下载相册中的所有照片和视频。
-
-### 手动触发计划任务
-
-不论任务计划是否启用。您都可以在控制台手动触发任务执行
-
-![manualtriggercrontab](static/manualtriggercrontab.avif)
-
-<div id="从v2迁移"></div>
-
-## 从 v2 迁移
-
-xiaomi-album-syncer 是一个有状态的应用，不论是 v2 还是 v3+ 版本，都使用 SQLite 作为数据库。为避免迁移后导致重复下载，v3+ 版本提供了从 v2 版本迁移数据的功能。在使用此功能前，确保：
-
-- 你已经正确备份了 v2 版本的数据库文件
-- v3 版本的实例已经正确运行过一次，并完成密码初始化
-- v3 版本的实例没有任何相册和照片数据（确保只进行过密码初始化，passToken 和 userId 提交过不影响）
-
-### 创建 v3 实例并挂载旧数据库
+需要 Git、Node.js 24.20+（24 系列）、JDK 25、Docker。以下命令在仓库根目录执行：
 
 ```bash
-docker run \
-  --name xiaomi-album-syncer \
-  -p 8232:8080 \
-  -v ~/xiaomi-album-syncer/download:/app/download \
-  -v ~/xiaomi-album-syncer/db:/app/db \
-  -v ./old.db:/app/old.db \
-  coolfan1024/xiaomi-album-syncer:latest
+# 克隆本仓库
+cd photoSyncer
+(cd web && npm install && npm run build)
+mkdir -p server/src/main/resources/static
+cp -R web/dist/. server/src/main/resources/static/
+(cd server && ./gradlew clean solonJar -PappVersion="$(git rev-parse --short HEAD)")
 ```
 
-观察此 docker 命令，不难发现主要区别在于多了一个 `-v ./old.db:/app/old.db` 的挂载。`./old.db` 是你 v2 版本的数据库文件路径。
-
-### 触发迁移
-
-访问 `http://localhost:8283/#/dashboard/setting` ，在页面底部找到 `从 V2 导入数据` 栏，单击 `导入` 按钮，等待导入完成。
-
-**如果遇到错误，请前往 Issues 页面发布 issue 并附上相关 docker 日志。**
-
-返回 schedule 页面，可以看到已经导入了所有相册和下载记录。
-
-### 卸载旧数据库（可选）
-
-迁移完成后，你可以选择卸载旧数据库文件。
+将 `server/build/libs/` 中生成的可执行 JAR 复制为 `docker/app.jar`。不要选择带 `-plain` 后缀的 JAR。
 
 ```bash
-docker run \
-  --name xiaomi-album-syncer \
-  -p 8232:8080 \
-  -v ~/xiaomi-album-syncer/download:/app/download \
-  -v ~/xiaomi-album-syncer/db:/app/db \
-  coolfan1024/xiaomi-album-syncer:latest
+cp "server/build/libs/XiaomiAlbumSyncer-$(git rev-parse --short HEAD).jar" docker/app.jar
+mkdir -p db download
+docker compose -f docker/docker-compose.yml up -d --build
 ```
 
-容器本身不存储任何状态和数据，删除重启容器不影响任何数据。
+构建和复制期间请保持 Git 提交不变。访问 `http://服务器IP:8232`，首次运行设置应用管理密码。该密码与小米、Apple 和 DSM 密码分别管理。远程访问建议通过反向代理启用 HTTPS。
 
-## Star History
+Compose 使用本地构建的 `photosyncer:local` 镜像，包含 JRE 25 和 ExifTool。默认持久化目录为仓库下的 `db` 和 `download`。也可设置以下环境变量后启动：
 
-<picture>
-  <source
-    media="(prefers-color-scheme: dark)"
-    srcset="
-      https://api.star-history.com/svg?repos=Coooolfan/XiaomiAlbumSyncer&type=Date&theme=dark
-    "
-  />
-  <source
-    media="(prefers-color-scheme: light)"
-    srcset="
-      https://api.star-history.com/svg?repos=Coooolfan/XiaomiAlbumSyncer&type=Date
-    "
-  />
-  <img
-    alt="Star History Chart"
-    src="https://api.star-history.com/svg?repos=Coooolfan/XiaomiAlbumSyncer&type=Date"
-  />
-</picture>
+| 变量 | 用途 | 默认值 |
+| --- | --- | --- |
+| `PHOTO_SYNCER_STATE_DIR` | 宿主机数据库与原件目录 | `../db`（相对 compose 文件） |
+| `PHOTO_SYNCER_EXPORT_DIR` | 宿主机展示文件目录 | `../download`（相对 compose 文件） |
+| `PHOTO_SYNCER_PORT` | 对外服务端口 | `8232` |
+
+容器内数据库为 `/app/db/xiaomialbumsyncer.db`，原件为 `/app/db/media`，展示根目录为 `/photos`。数据库文件名保留历史名称，不影响功能。确保挂载目录可写。原件库和展示根目录必须互不包含，并保持足够空间容纳两份媒体及处理中的临时文件。
+
+### 群晖 Container Manager
+
+先按上文构建镜像，或将构建机器的镜像通过 `docker save`／`docker load` 导入群晖，再使用 compose 文件启动（已导入镜像时无需 `--build`）。也可以在群晖上传 `docker/app.jar` 与 `docker/Dockerfile.jvm` 后构建镜像。
+
+以个人空间为例，将 `PHOTO_SYNCER_EXPORT_DIR` 设置为用户 Photos 下的专用目录，例如 `/volume3/homes/用户名/Photos/photoSyncer`；共享空间则使用实际 `/volumeN/photo` 下的专用目录。卷号按设备实际情况填写。
+
+若群晖默认 Docker 网络无法出网，可在镜像构建时添加 `--network host`，并在部署用的 compose 中设置 `network_mode: host`、环境变量 `SERVER_PORT: "8232"`，同时移除 `ports` 映射。任务目标路径仍为 `/photos`。使用宿主机用户 UID/GID 运行时，还需给该用户可写的 `/app/logs` 挂载。
+
+`PHOTO_SYNCER_STATE_DIR` 例如 `/volume3/docker/photoSyncer/db`，必须位于 Photos 索引目录之外。任务目标填写容器内路径 `/photos`。不要直接填写宿主机卷路径。无需特权模式，也无需修改群晖 Photos 数据库或 `@eaDir`。
+
+### 直接运行 JVM
+
+安装 JDK／JRE 25 和 ExifTool，按上文构建 JAR，在独立工作目录运行：
+
+```bash
+APP_DB_PATH=./db/xiaomialbumsyncer.db java --enable-native-access=ALL-UNNAMED -jar /实际路径/app.jar
+```
+
+默认监听 `8080`。在应用设置中填写本机 ExifTool 的可执行路径。`PHOTO_SYNCER_MEDIA_ROOT` 可指定原件根目录，默认在数据库目录下的 `media`；它必须持久化并与展示目录分开。
+
+## 绑定账号和创建任务
+
+1. 打开设置页，绑定小米或 Apple 账号。
+   - 小米推荐扫码添加；也支持填写 `userId` 和 `passToken`。首次访问云相册可能还需要完成小米云的设备／短信授权。
+   - Apple 使用 Apple Account 登录，按提示提交双重认证验证码；账号会话失效后需要重新登录。中国大陆账号选择对应服务区域。
+2. 在任务页更新所选账号的远程相册列表。
+3. 创建任务，选择账号、相册、同步模式、时间及媒体类型。Cron 示例 `0 0 23 * * ?` 表示每天 23 点，按服务运行时区执行。
+4. 使用群晖 Photos 时保持该模式开启，目标填 `/photos`。图片和实况配套视频分别控制；需要保留 Apple 动态部分时开启配套视频。
+5. 可先手动执行并查看任务历史；确认结果后启用定时执行。
+
+群晖模式的目录示例：
+
+```text
+/photos/icloud-1/<图库摘要>/asset_<照片摘要>.heic
+/photos/icloud-1/<图库摘要>/asset_<照片摘要>.mov
+/photos/xiaomi-2/<图库摘要>/asset_<照片摘要>.jpg
+```
+
+旧任务保留原路径模式。切换群晖模式建议使用新空目录，再核对旧导出，避免 Photos 索引出重复项目。
+
+## 删除与备份
+
+任务中的“同步云端删除”控制本地清理：
+
+| 设置 | 云端确认删除后的行为 |
+| --- | --- |
+| 关闭 | 保留已下载的本地文件和原件，适合作长期备份 |
+| 开启 | 清理对应托管展示文件及没有其他任务引用的历史原件 |
+
+**新建任务默认开启；升级前的旧任务默认关闭。** 手机删除需先同步到云端，本地下一次成功检查后才清理。Apple 实况图片及配套视频作为一组处理。
+
+应用只清理具有归属凭据、路径安全且校验匹配的托管文件。相册移出、登录失效、分页失败不能证明删除；外部修改、符号链接或其他任务仍引用的文件会保留并报告。小米对象在首次观察前已永久清空回收站时，可能无法取得充分证据，会保留本地文件。应用不会删除云端照片。
+
+当前通过任务开关选择备份或跟随删除，不自动判断用户是在整理照片还是释放云端空间。详细规则见 [删除同步说明](docs/synology-photos.md#手机删除后同步清理)。
+
+## 升级与备份
+
+升级前停止容器，一起备份 `db`（含原件库）、展示目录及部署配置，再替换镜像。仅备份 SQLite 无法恢复原件与发布凭据。不要在运行时只复制 SQLite 主文件而遗漏 WAL；可停止服务后复制，或使用 SQLite backup API。
+
+旧版 v2 数据导入入口在设置页。迁移前备份旧数据库，将其作为 `/app/old.db` 挂载给已完成密码初始化、尚无相册和下载记录的新实例，再执行“从 V2 导入数据”。迁移后检查任务目标路径和账号状态。
+
+## 开发与验证
+
+```bash
+(cd web && npm run lint && npm run format && npm run build)
+(cd server && ./gradlew clean compileKotlin test apiE2eJvm)
+(cd xas-mock && go test ./...)
+```
+
+后端使用 Kotlin／Solon／Jimmer／SQLite，前端使用 Vue／TypeScript／Vite。实机格式验证记录见 [群晖验证](docs/plan/synology-photos-validation.md)，删除边界和自动化断言见 [删除验证](docs/plan/cloud-deletion-validation.md)。
+
+本项目保留上游 [许可证](LICENSE) 与归属信息。

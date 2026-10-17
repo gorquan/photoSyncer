@@ -40,3 +40,5 @@ logs/
 !.claude/skills
 
 /server/db/
+
+/docker/app.jar

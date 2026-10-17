@@ -9,3 +9,5 @@ Run JDK 25 `cd server && ./gradlew clean compileKotlin test`. Add regressions fo
 See [native motion photo contracts](motion-photo.md) for XMP range validation and EXIF preservation.
 
 See [cloud deletion contracts](cloud-deletion.md) for provider evidence, deletion journals, shared ownership and cleanup status.
+
+See [deployment contracts](deployment.md) for fork builds, persistent mounts, migration and validation cleanup.
