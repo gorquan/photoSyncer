@@ -2065,6 +2065,12 @@
             "long",
             "com.coooolfan.xiaomialbumsyncer.model.dto.XiaomiAccountInput"
           ]
+        },
+        {
+          "name": "checkAuthentication",
+          "parameterTypes": [
+            "long"
+          ]
         }
       ]
     },
@@ -2328,6 +2334,14 @@
           "parameterTypes": [
             "org.babyfish.jimmer.sql.kt.KSqlClient",
             "com.coooolfan.xiaomialbumsyncer.service.NotifyService"
+          ]
+        },
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "org.babyfish.jimmer.sql.kt.KSqlClient",
+            "com.coooolfan.xiaomialbumsyncer.service.NotifyService",
+            "com.coooolfan.xiaomialbumsyncer.service.AccountAuthStatusService"
           ]
         }
       ]
@@ -7688,21 +7702,6 @@
       "type": "com.coooolfan.xiaomialbumsyncer.service.ProviderAccountService",
       "methods": [
         {
-          "name": "<init>",
-          "parameterTypes": [
-            "org.babyfish.jimmer.sql.kt.KSqlClient",
-            "com.coooolfan.xiaomialbumsyncer.xiaomicloud.TokenManager"
-          ]
-        },
-        {
-          "name": "<init>",
-          "parameterTypes": [
-            "org.babyfish.jimmer.sql.kt.KSqlClient",
-            "com.coooolfan.xiaomialbumsyncer.xiaomicloud.TokenManager",
-            "com.coooolfan.xiaomialbumsyncer.icloud.ICloudAccountService"
-          ]
-        },
-        {
           "name": "create",
           "parameterTypes": [
             "com.coooolfan.xiaomialbumsyncer.model.dto.XiaomiAccountInput"
@@ -7737,6 +7736,15 @@
           "parameterTypes": [
             "com.coooolfan.xiaomialbumsyncer.model.ProviderAccount",
             "org.babyfish.jimmer.sql.fetcher.Fetcher"
+          ]
+        },
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "org.babyfish.jimmer.sql.kt.KSqlClient",
+            "com.coooolfan.xiaomialbumsyncer.xiaomicloud.TokenManager",
+            "com.coooolfan.xiaomialbumsyncer.icloud.ICloudAccountService",
+            "com.coooolfan.xiaomialbumsyncer.xiaomicloud.XiaoMiApi"
           ]
         }
       ]
@@ -8169,6 +8177,14 @@
           "name": "setUserId",
           "parameterTypes": [
             "java.lang.Long"
+          ]
+        },
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "org.babyfish.jimmer.sql.kt.KSqlClient",
+            "com.coooolfan.xiaomialbumsyncer.service.NotifyService",
+            "com.coooolfan.xiaomialbumsyncer.service.AccountAuthStatusService"
           ]
         }
       ]
@@ -16580,6 +16596,20 @@
           ]
         }
       ]
+    },
+    {
+      "type": "com.coooolfan.xiaomialbumsyncer.service.AccountAuthStatusService",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": [
+            "org.babyfish.jimmer.sql.kt.KSqlClient"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "com.coooolfan.xiaomialbumsyncer.model.AccountAuthState"
     }
   ]
 }

@@ -51,6 +51,8 @@ class ICloudClientTest {
                     mapOf("dsInfo" to mapOf("hsaVersion" to 2, "dsid" to "123"), "hsaChallengeRequired" to !trusted,
                         "hsaTrustedBrowser" to trusted, "webservices" to mapOf("ckdatabasews" to mapOf("url" to "http://127.0.0.1:${server.address.port}")))
                 }
+                "/database/1/com.apple.photos.cloud/production/private/zones/list" ->
+                    mapOf("zones" to listOf(mapOf("zoneID" to mapOf("zoneName" to "PrimarySync"))))
                 else -> mapOf("records" to emptyList<String>())
             }
             val bytes = mapper.writeValueAsBytes(response)
@@ -72,6 +74,11 @@ class ICloudClientTest {
             restored.ensureAuthenticated()
             assertEquals(1, requests.count { it.endsWith("/signin/init") })
             assertTrue(requests.contains("POST /setup/validate"))
+            val validations = requests.count { it == "POST /setup/validate" }
+            restored.checkAuthentication()
+            assertEquals(validations + 1, requests.count { it == "POST /setup/validate" }, "Manual check must bypass only the cache, retaining the saved session")
+            assertEquals(1, requests.count { it.endsWith("/signin/init") }, "A valid saved session must not trigger password login")
+            assertTrue(requests.any { it.contains("/zones/list") })
             assertTrue(restored.login())
             assertEquals(1, requests.count { it == "PUT /auth/verify/trusteddevice/securitycode" })
         } finally {

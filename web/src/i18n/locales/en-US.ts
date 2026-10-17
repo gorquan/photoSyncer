@@ -722,6 +722,29 @@ const messages: typeof zh = {
     },
   },
   tokens: {
+    auth: {
+      status: 'Authentication',
+      lastChecked: 'Last checked',
+      neverChecked: 'Not checked yet',
+      check: 'Check authentication',
+      requestFailed: 'Could not complete the authentication check. Please try again.',
+      states: {
+        UNKNOWN: 'Not checked',
+        READY: 'Authenticated',
+        MFA_REQUIRED: 'Verification required',
+        SESSION_EXPIRED: 'Login expired',
+        CHECK_FAILED: 'Check failed',
+      },
+      hints: {
+        UNKNOWN: 'These credentials have not been checked. Run an authentication check.',
+        READY: 'The latest cloud authentication check succeeded. The session may expire later.',
+        MFA_REQUIRED:
+          'Additional verification is required. For Xiaomi, verify on the Xiaomi Cloud website. For Apple, edit the account to complete code or web verification.',
+        SESSION_EXPIRED: 'Credentials have expired. Edit the account to scan again or sign in.',
+        CHECK_FAILED:
+          'Authentication could not be confirmed. Check your network and cloud service settings and retry; this does not mean the credentials have expired.',
+      },
+    },
     icloud: {
       status: 'Authentication',
       states: {

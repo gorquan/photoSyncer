@@ -42,6 +42,13 @@ class ProviderAccountController(private val service: ProviderAccountService) {
         return service.update(update.toEntity(id), DEFAULT_PROVIDER_ACCOUNT)
     }
 
+    /** Read-only provider authentication check; returns no credentials or provider response body. */
+    @Api
+    @Mapping("/{id}/check-auth", method = [MethodType.POST])
+    @SaCheckLogin
+    fun checkAuthentication(@Path id: Long): @FetchBy("DEFAULT_PROVIDER_ACCOUNT") ProviderAccount =
+        service.checkAuthentication(id, DEFAULT_PROVIDER_ACCOUNT)
+
     /** 删除云服务账号及关联相册、定时任务。 */
     @Api
     @Mapping("/{id}", method = [MethodType.DELETE])
@@ -56,6 +63,8 @@ class ProviderAccountController(private val service: ProviderAccountService) {
             provider()
             nickname()
             userId()
+            authState()
+            authCheckedAt()
         }
     }
 }

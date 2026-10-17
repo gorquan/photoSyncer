@@ -701,6 +701,28 @@ export default {
     },
   },
   tokens: {
+    auth: {
+      status: '认证状态',
+      lastChecked: '最近检测',
+      neverChecked: '尚未检测',
+      check: '检测认证',
+      requestFailed: '无法完成认证检测，请稍后重试。',
+      states: {
+        UNKNOWN: '待检测',
+        READY: '已认证',
+        MFA_REQUIRED: '需要验证',
+        SESSION_EXPIRED: '登录失效',
+        CHECK_FAILED: '检测失败',
+      },
+      hints: {
+        UNKNOWN: '尚未检测当前凭据，请点击检测认证。',
+        READY: '最近一次云服务认证检查成功；会话之后仍可能过期。',
+        MFA_REQUIRED:
+          '需要额外验证。小米请到小米云官网完成验证；苹果请编辑账号完成验证码或网页验证。',
+        SESSION_EXPIRED: '认证凭据已失效，请编辑账号重新扫码或登录。',
+        CHECK_FAILED: '未能确认认证状态，请检查网络和云服务设置后重试；这不表示凭据已失效。',
+      },
+    },
     icloud: {
       status: '认证状态',
       states: { READY: '已认证', MFA_REQUIRED: '需要验证码', SESSION_EXPIRED: '请重新登录' },

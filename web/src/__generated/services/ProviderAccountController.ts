@@ -10,6 +10,18 @@ export class ProviderAccountController {
     constructor(private executor: Executor) {}
 
     /**
+     * Read-only provider authentication check; returns no credentials or provider response body.
+     */
+    readonly checkAuthentication: (options: ProviderAccountControllerOptions['checkAuthentication']) => Promise<
+        ProviderAccountDto['ProviderAccountController/DEFAULT_PROVIDER_ACCOUNT']
+    > = async(options) => {
+        let _uri = '/api/account/';
+        _uri += encodeURIComponent(options.id);
+        _uri += '/check-auth';
+        return (await this.executor({uri: _uri, method: 'POST'})) as Promise<ProviderAccountDto['ProviderAccountController/DEFAULT_PROVIDER_ACCOUNT']>;
+    }
+
+    /**
      * 创建小米账号；iCloud 账号通过 ICloudController 登录接口创建。
      */
     readonly create: (options: ProviderAccountControllerOptions['create']) => Promise<
@@ -60,6 +72,9 @@ export type ProviderAccountControllerOptions = {
     'update': {
         readonly id: number,
         readonly body: XiaomiAccountInput
+    },
+    'checkAuthentication': {
+        readonly id: number
     },
     'delete': {
         readonly id: number

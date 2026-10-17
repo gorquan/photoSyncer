@@ -37,7 +37,7 @@ internal class XiaomiBusinessException(val code: Int) :
 
 fun JsonNode.throwIfBizError() {
     if (findValue("isSecondValidation")?.asBoolean() == true) {
-        error("小米账号需要二次验证，请先在小米云服务官方网站完成验证，再刷新授权重试")
+        throw com.coooolfan.xiaomialbumsyncer.exception.XiaomiAuthenticationException(requiresVerification = true)
     }
     require(hasNonNull("code")) { "小米接口响应缺少业务状态码" }
     val code = at("/code").asText().toIntOrNull()
@@ -49,7 +49,7 @@ fun JsonNode.validateXiaomiResponse(httpCode: Int): JsonNode {
     // HTTP 401 的响应体仍可能包含可操作的二次验证状态。
     if (findValue("isSecondValidation")?.asBoolean() == true) throwIfBizError()
     if (httpCode == 401 || httpCode == 403) {
-        error("小米账号授权失效，请重新扫码更新账号凭据后重试")
+        throw com.coooolfan.xiaomialbumsyncer.exception.XiaomiAuthenticationException()
     }
     throwIfNotSuccess(httpCode)
     throwIfBizError()

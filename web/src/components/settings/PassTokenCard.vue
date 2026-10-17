@@ -31,24 +31,44 @@ const albumsStore = useAlbumsStore()
 const crontabsStore = useCrontabsStore()
 
 const { accounts, loading } = storeToRefs(accountsStore)
-const icloudStates = ref<Record<number, string>>({})
-watch(
-  accounts,
-  async (list) => {
-    const results = await Promise.allSettled(
-      list
-        .filter((a) => a.provider === 'ICLOUD')
-        .map(async (a) => {
-          const status = await api.icloudController.status({ id: a.id })
-          return [a.id, status.state] as const
-        }),
-    )
-    icloudStates.value = Object.fromEntries(
-      results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : [])),
-    )
-  },
-  { immediate: true },
-)
+const checkingAccounts = ref<Record<number, boolean>>({})
+
+function authSeverity(state: Account['authState']) {
+  if (state === 'READY') return 'success'
+  if (state === 'SESSION_EXPIRED') return 'danger'
+  if (state === 'UNKNOWN') return 'secondary'
+  return 'warn'
+}
+
+function authCheckedAt(timestamp?: string | null) {
+  return timestamp == null
+    ? t('tokens.auth.neverChecked')
+    : new Date(timestamp).toLocaleString(locale.value)
+}
+
+async function checkAuthentication(account: Account) {
+  if (checkingAccounts.value[account.id]) return
+  checkingAccounts.value[account.id] = true
+  try {
+    const result = await api.providerAccountController.checkAuthentication({ id: account.id })
+    await accountsStore.refreshAccounts()
+    toast.add({
+      severity: result.authState === 'READY' ? 'success' : 'warn',
+      summary: t('tokens.auth.status'),
+      detail: t(`tokens.auth.hints.${result.authState}`),
+      life: 5000,
+    })
+  } catch {
+    toast.add({
+      severity: 'error',
+      summary: t('common.toast.error'),
+      detail: t('tokens.auth.requestFailed'),
+      life: 5000,
+    })
+  } finally {
+    delete checkingAccounts.value[account.id]
+  }
+}
 const saving = ref(false)
 const showDialog = ref(false)
 const isEditMode = ref(false)
@@ -72,7 +92,7 @@ let qrTimer: ReturnType<typeof setTimeout> | undefined
 // 每次开始/停止轮询自增，使过期的异步回调自行作废
 let qrSeq = 0
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const dialogHeader = computed(() => {
   if (dialogStep.value === 'icloud') return t('tokens.account.providerIcloud')
@@ -91,7 +111,7 @@ onMounted(() => {
   } catch {
     isInsecureContext.value = false
   }
-  accountsStore.fetchAccounts()
+  accountsStore.refreshAccounts()
 })
 
 onUnmounted(() => {
@@ -344,18 +364,30 @@ function confirmDelete(account: Account) {
           <ProviderTag :provider="data.provider" full-name />
         </template>
       </Column>
-      <Column :header="t('tokens.icloud.status')">
+      <Column :header="t('tokens.auth.status')">
         <template #body="{ data }">
           <Tag
-            v-if="data.provider === 'ICLOUD' && icloudStates[data.id]"
-            :value="t(`tokens.icloud.states.${icloudStates[data.id]}`)"
-            :severity="icloudStates[data.id] === 'READY' ? 'success' : 'warn'"
+            :value="t(`tokens.auth.states.${data.authState ?? 'UNKNOWN'}`)"
+            :severity="authSeverity(data.authState ?? 'UNKNOWN')"
+            :title="t(`tokens.auth.hints.${data.authState ?? 'UNKNOWN'}`)"
           />
         </template>
       </Column>
-      <Column :header="t('tokens.table.actions')" :style="{ width: '10rem' }">
+      <Column :header="t('tokens.auth.lastChecked')">
+        <template #body="{ data }">{{ authCheckedAt(data.authCheckedAt) }}</template>
+      </Column>
+      <Column :header="t('tokens.table.actions')" :style="{ width: '15rem' }">
         <template #body="slotProps">
           <div class="flex gap-2">
+            <Button
+              :label="t('tokens.auth.check')"
+              icon="pi pi-refresh"
+              text
+              size="small"
+              :loading="checkingAccounts[slotProps.data.id]"
+              :disabled="checkingAccounts[slotProps.data.id]"
+              @click="checkAuthentication(slotProps.data)"
+            />
             <Button
               icon="pi pi-pencil"
               text

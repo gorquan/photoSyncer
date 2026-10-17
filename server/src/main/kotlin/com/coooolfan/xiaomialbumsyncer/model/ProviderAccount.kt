@@ -15,6 +15,11 @@ interface ProviderAccount {
     val credentials: String  // 来源特定的 JSON 凭据
     val userId: String        // 来源账号标识
 
+    @Default("UNKNOWN")
+    val authState: AccountAuthState
+
+    val authCheckedAt: java.time.Instant?
+
     @OneToMany(mappedBy = "account")
     val albums: List<Album>
 

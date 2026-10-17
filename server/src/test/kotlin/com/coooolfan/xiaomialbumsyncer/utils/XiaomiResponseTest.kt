@@ -9,14 +9,16 @@ class XiaomiResponseTest {
 
     @Test fun unauthorizedSecondaryValidationHasActionableMessage() {
         val tree = mapper.readTree("""{"code":401,"data":{"isSecondValidation":true}}""")
-        val failure = assertThrows(IllegalStateException::class.java) { tree.validateXiaomiResponse(401) }
+        val failure = assertThrows(com.coooolfan.xiaomialbumsyncer.exception.XiaomiAuthenticationException::class.java) { tree.validateXiaomiResponse(401) }
         assertTrue(failure.message!!.contains("二次验证"))
+        assertTrue(failure.requiresVerification)
     }
 
     @Test fun staleAuthorizationRecommendsRescanning() {
         val tree = mapper.readTree("""{"code":0}""")
-        val failure = assertThrows(IllegalStateException::class.java) { tree.validateXiaomiResponse(401) }
+        val failure = assertThrows(com.coooolfan.xiaomialbumsyncer.exception.XiaomiAuthenticationException::class.java) { tree.validateXiaomiResponse(401) }
         assertTrue(failure.message!!.contains("重新扫码"))
+        assertFalse(failure.requiresVerification)
     }
 
     @Test fun businessFailureCannotBecomeEmptySuccessfulAlbum() {
