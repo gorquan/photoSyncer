@@ -361,12 +361,13 @@ function confirmDelete(account: Account) {
       <Column field="userId" :header="t('tokens.account.userId')"></Column>
       <Column :header="t('tokens.account.provider')">
         <template #body="{ data }">
-          <ProviderTag :provider="data.provider" full-name />
+          <ProviderTag :provider="data.provider" full-name class="whitespace-nowrap" />
         </template>
       </Column>
-      <Column :header="t('tokens.auth.status')">
+      <Column :header="t('tokens.auth.status')" :style="{ minWidth: '6rem' }">
         <template #body="{ data }">
           <Tag
+            class="whitespace-nowrap"
             :value="t(`tokens.auth.states.${data.authState ?? 'UNKNOWN'}`)"
             :severity="authSeverity(data.authState ?? 'UNKNOWN')"
             :title="t(`tokens.auth.hints.${data.authState ?? 'UNKNOWN'}`)"
