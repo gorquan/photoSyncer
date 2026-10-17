@@ -30,3 +30,7 @@
 # Python cache
 **/__pycache__/
 **/*.pyc
+
+# Local task/session records may contain private operational details.
+tasks/
+workspace/
