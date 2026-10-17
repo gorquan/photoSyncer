@@ -339,7 +339,7 @@ export default {
     step: {
       basic: '基本信息',
       scope: '同步范围',
-      mode: '同步模式',
+      mode: '保存与同步',
       schedule: '调度与存储',
     },
     badge: {
@@ -361,6 +361,8 @@ export default {
       expressionExample: '例：0 0 23 * * ? 表示每天 23 点执行',
       timeZone: '时区',
       targetPath: '保存路径',
+      targetPathPhotosHint:
+        '填写已挂载的固定根目录，例如 /photos。应用在其下按厂商、账号和图库保存文件，不使用路径模板。',
       targetPathHint:
         '如在容器环境下运行，请确保已将此路径映射到宿主机。程序将在此路径下创建相册各自的文件夹。',
       targetPathMountWarning:
@@ -371,17 +373,28 @@ export default {
       albums: '关联相册',
       albumsPlaceholder: '选择相册',
     },
+    retention: {
+      title: '本地保存模式',
+      backup: '备份模式',
+      mirror: '镜像模式',
+      backupHint: '下载并更新照片。云端删除后，本地展示文件和留存原件继续保留。',
+      mirrorHint:
+        '云端确认删除后，永久清理本任务托管的展示文件及无其他任务引用的原件（含历史版本）。Live Photo 配套文件一起清理，不反向删除云端内容。',
+      scanTitle: '扫描方式',
+      scanHint: '决定如何检查云端新增和更新，与本地保存模式、群晖适配分别设置。',
+      photosOn: '群晖 Photos：开',
+      photosOff: '群晖 Photos：关',
+    },
     toggle: {
       downloadImages: '下载照片',
       downloadVideos: '下载视频',
       downloadLivePhotos: '下载苹果 Live Photo 动态部分',
       downloadLivePhotosHint: '随照片下载配对视频，独立于普通视频开关；小米动态照片保留在原图中。',
-      syncCloudDeletes: '同步云端删除',
-      syncCloudDeletesHint:
-        '云端确认删除后，永久删除本任务管理的照片/视频导出及无其他任务引用的留存原件（含历史版本）。Live Photo 配套文件一起删除；不会删除云端内容。',
-      synologyPhotos: '群晖 Photos 兼容布局',
+      synologyPhotos: '适配群晖 Photos',
       synologyPhotosHint:
-        '目标路径填写固定根目录。按账号和图库保存一份原件，Live Photo 图片与视频同名同目录。HEIC / HEVC 预览取决于 Image Assistant、NAS 和客户端能力。旧文件不会自动迁移，建议使用新的空目录。',
+        '开启：使用固定目标根目录，按厂商、账号和图库隔离导出；Apple Live Photo 图片与视频同名配对，小米动态照片保留原始结构。',
+      synologyPhotosOffHint:
+        '关闭：使用普通相册路径或路径模板。切换不会自动搬迁旧文件，建议使用新的空目录；HEIC / HEVC 预览仍取决于 NAS 和客户端能力。',
       downloadAudios: '下载录音',
       notify: '发送通知',
       enabled: '定时触发',
