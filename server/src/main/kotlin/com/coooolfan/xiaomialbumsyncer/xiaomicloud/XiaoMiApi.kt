@@ -383,7 +383,7 @@ internal fun parseAlbumTimeline(response: JsonNode): AlbumTimeline {
     response.throwIfBizError()
     val indexHash = response.at("/data/indexHash")
     val counts = response.at("/data/dayCount")
-    require(indexHash.isTextual && indexHash.asText().isNotBlank() && counts.isObject) { "小米相册时间线响应不完整" }
+    require((indexHash.isTextual && indexHash.asText().isNotBlank() || indexHash.isIntegralNumber) && counts.isObject) { "小米相册时间线响应不完整" }
     val dayCounts = counts.properties().associate { entry ->
         val count = entry.value
         require(count.isIntegralNumber && count.canConvertToLong() && count.asLong() >= 0) { "小米相册时间线数量无效" }
