@@ -223,14 +223,6 @@ class MediaDeletion(private val root: Path) {
             !absoluteRoot.startsWith(boundary) && noSymlinks(boundary)
     }.getOrDefault(false)
     private fun normalized(value: String): Path = Path.of(value).toAbsolutePath().normalize()
-    private fun noSymlinks(path: Path): Boolean {
-        var cursor: Path? = path.toAbsolutePath().normalize()
-        while (cursor != null) {
-            if (Files.isSymbolicLink(cursor)) return false
-            cursor = cursor.parent
-        }
-        return true
-    }
     private fun validHash(value: String) = value.matches(Regex("[a-f0-9]{64}"))
     private fun matches(path: Path, expected: String) = validHash(expected) && runCatching {
         digestOriginal(path, Files.size(path)).sha256 == expected

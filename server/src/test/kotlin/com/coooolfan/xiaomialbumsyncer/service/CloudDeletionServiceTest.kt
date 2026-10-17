@@ -37,7 +37,7 @@ class CloudDeletionServiceTest {
             assertTrue(assets.getAssetsUndownloadByCrontab(job, 50, 0, true).isEmpty())
             assertTrue(assets.publicationGroup(job, allAssets().first()).isEmpty())
             val retried = deletion.reconcile(job, { _, _ -> Unit }, {
-                fail<CloudPresence>("persisted deletion intent must survive purge without another source probe")
+                CloudPresence.DELETED
             })
             assertEquals(0, retried.newlyDeletedGroups)
             assertEquals(5, retried.deletedGroups.single().assets.size)
@@ -138,6 +138,45 @@ class CloudDeletionServiceTest {
             }
             assertTrue(allAssets().none { it.cloudDeleted })
             assertEquals(listOf("B"), assets.getAssetsUndownloadByCrontab(job, 50, 0, true).map { it.checksum })
+        }
+    }
+
+    @Test fun restoredOutsideSelectedAlbumsIsProbedEvenWithPersistedTombstone() = withStore { store ->
+        with(store) {
+            media.saveAssets(listOf(resource(albums[0], "A")))
+            deletion.reconcile(job, { _, _ -> Unit }, { CloudPresence.DELETED })
+            var probes = 0
+            val restored = deletion.reconcile(job, { _, _ -> Unit }, { probes++; CloudPresence.LIVE })
+            assertEquals(1, probes)
+            assertEquals(1, restored.restoredGroups)
+            assertTrue(restored.deletedGroups.isEmpty())
+            assertTrue(allAssets().none { it.cloudDeleted })
+        }
+    }
+
+    @Test fun persistedTombstoneCannotBypassAuthenticationOrNetworkFailure() = withStore { store ->
+        with(store) {
+            media.saveAssets(listOf(resource(albums[0], "A")))
+            deletion.reconcile(job, { _, _ -> Unit }, { CloudPresence.DELETED })
+            assertThrows(IllegalStateException::class.java) {
+                deletion.reconcile(job, { _, _ -> Unit }, { error("authorization expired") })
+            }
+            assertTrue(allAssets().all { it.cloudDeleted })
+        }
+    }
+
+    @Test fun xiaomiUncertainStorageOnlyRetainsAnAlreadyConfirmedDeletion() = withStore { store ->
+        with(store) {
+            sql.executeUpdate(ProviderAccount::class) { set(table.provider, CloudProvider.XIAOMI) }
+            media.saveAssets(listOf(Asset(resource(albums[0], "A")) { remoteKey = "42" }))
+            assertThrows(XiaomiGalleryPresenceUncertain::class.java) {
+                deletion.reconcile(job, { _, _ -> Unit }, { throw XiaomiGalleryPresenceUncertain() })
+            }
+            assertTrue(allAssets().none { it.cloudDeleted })
+            deletion.reconcile(job, { _, _ -> Unit }, { CloudPresence.DELETED })
+            assertEquals(1, deletion.reconcile(job, { _, _ -> Unit }, { throw XiaomiGalleryPresenceUncertain() }).deletedGroups.size)
+            assertEquals(1, deletion.reconcile(job, { _, _ -> Unit }, { CloudPresence.LIVE }).restoredGroups)
+            assertTrue(allAssets().none { it.cloudDeleted })
         }
     }
 

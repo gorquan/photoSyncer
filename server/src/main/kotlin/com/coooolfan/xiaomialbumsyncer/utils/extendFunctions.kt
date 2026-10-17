@@ -32,6 +32,9 @@ fun JsonNode.textOrNull(field: String): String? =
     at("/$field").asText(null)?.takeIf { it.isNotBlank() }
 
 // 小米接口约定：code != 0 即业务错误。响应体不写入日志或异常，避免泄露认证信息。
+internal class XiaomiBusinessException(val code: Int) :
+    IllegalStateException("小米返回业务错误码 $code，请检查账号授权后重试")
+
 fun JsonNode.throwIfBizError() {
     if (findValue("isSecondValidation")?.asBoolean() == true) {
         error("小米账号需要二次验证，请先在小米云服务官方网站完成验证，再刷新授权重试")
@@ -39,7 +42,7 @@ fun JsonNode.throwIfBizError() {
     require(hasNonNull("code")) { "小米接口响应缺少业务状态码" }
     val code = at("/code").asText().toIntOrNull()
         ?: error("小米接口业务状态码格式无效")
-    if (code != 0) error("小米返回业务错误码 $code，请检查账号授权后重试")
+    if (code != 0) throw XiaomiBusinessException(code)
 }
 
 fun JsonNode.validateXiaomiResponse(httpCode: Int): JsonNode {

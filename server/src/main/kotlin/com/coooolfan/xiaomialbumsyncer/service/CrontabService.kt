@@ -171,6 +171,7 @@ class CrontabService(private val sql: KSqlClient) {
             where(table.crontabId eq history.crontab.id)
             where(table.id ne history.id)
             where(table.endTime ne null)
+            where(table.fetchedAllAssets eq true)
             where(table.timelineSnapshot ne null)
             select(table.timelineSnapshot)
         }.limit(1).execute().firstOrNull() ?: emptyMap()

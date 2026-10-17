@@ -104,6 +104,17 @@ class MediaDeletionTest {
         assertFalse(Files.exists(Path.of(first.outputs.single().path))); assertTrue(Files.exists(Path.of(retained.outputs.single().path)))
         assertTrue(Files.exists(Path.of(retained.outputs.single().archive)))
     }
+    @Test fun changingOneTasksSelectedRolesCannotRemoveAnotherTasksCompanion() {
+        publish(listOf(detail(), detail("resOriginalVidCompl")))
+        val retained = publish(listOf(detail(task = 2), detail("resOriginalVidCompl", task = 2)))
+        val companion = Path.of(retained.outputs.first { it.resource.endsWith("/resOriginalVidCompl") }.path)
+        publish(listOf(detail()))
+        assertTrue(Files.exists(companion), "another task still owns the Live Photo companion")
+        assertEquals("DEFERRED", delete().status)
+        assertTrue(Files.exists(companion))
+        assertEquals("DELETED", delete(2).status)
+        assertFalse(Files.exists(companion))
+    }
     @Test fun symlinkAndEscapedPathsKeepTargets() {
         val receipt = publish(listOf(detail())); val output = Path.of(receipt.outputs.single().path)
         val foreign = directory.resolve("foreign.jpg"); Files.write(foreign, jpeg)
