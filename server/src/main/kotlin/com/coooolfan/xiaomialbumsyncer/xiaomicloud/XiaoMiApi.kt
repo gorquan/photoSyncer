@@ -129,12 +129,9 @@ class XiaoMiApi(private val tokenManager: TokenManager) {
 
     fun fetchAlbumTimeline(accountId: Long, albumId: Long): AlbumTimeline {
         val responseTree = getJson(accountId, apiProperties.url("gallery/user/timeline?ts=${System.currentTimeMillis()}&albumId=$albumId"))
-        val indexHash = responseTree.at("/data/indexHash").asText()
-        val dayCountMap = responseTree.at("/data/dayCount").properties().asSequence().map {
-            LocalDate.parse(it.key, BASIC_ISO_DATE) to it.value.asLong()
-        }.toMap()
+        val timeline = parseAlbumTimeline(responseTree)
         log.info("从远程解析相册 ID=$albumId 时间线")
-        return AlbumTimeline(indexHash, dayCountMap)
+        return timeline
     }
 
     /**
@@ -206,9 +203,9 @@ class XiaoMiApi(private val tokenManager: TokenManager) {
         return try {
             parseGalleryPresence(getJson(accountId,
                 apiProperties.url("gallery/storage?ts=${System.currentTimeMillis()}&id=$id")))
-        } catch (error: IllegalStateException) {
-            if (error.message?.contains("业务错误码 50050") == true) {
-                throw IllegalStateException("无法确认云端删除（小米错误码 50050），本次保留本地文件", error)
+        } catch (error: XiaomiBusinessException) {
+            if (error.code == 50050) {
+                throw XiaomiGalleryPresenceUncertain(error)
             }
             throw error
         }
@@ -375,6 +372,23 @@ internal fun hasXiaomiMotionHint(description: JsonNode?): Boolean {
 }
 
 internal data class DeletedGalleryPage(val ids: Set<String>, val lastPage: Boolean, val syncTag: String)
+
+internal fun parseAlbumTimeline(response: JsonNode): AlbumTimeline {
+    response.throwIfBizError()
+    val indexHash = response.at("/data/indexHash")
+    val counts = response.at("/data/dayCount")
+    require(indexHash.isTextual && indexHash.asText().isNotBlank() && counts.isObject) { "小米相册时间线响应不完整" }
+    val dayCounts = counts.properties().associate { entry ->
+        val count = entry.value
+        require(count.isIntegralNumber && count.canConvertToLong() && count.asLong() >= 0) { "小米相册时间线数量无效" }
+        LocalDate.parse(entry.key, BASIC_ISO_DATE) to count.asLong()
+    }
+    return AlbumTimeline(indexHash.asText(), dayCounts)
+}
+
+/** Storage's invalid-state response cannot independently establish deletion. */
+internal class XiaomiGalleryPresenceUncertain(cause: Throwable? = null) :
+    IllegalStateException("无法确认云端删除（小米错误码 50050），本次保留本地文件", cause)
 
 internal fun parseDeletedGalleryPage(response: JsonNode): DeletedGalleryPage {
     response.throwIfBizError()

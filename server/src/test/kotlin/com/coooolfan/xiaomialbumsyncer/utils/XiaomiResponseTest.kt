@@ -36,4 +36,14 @@ class XiaomiResponseTest {
         val tree = mapper.readTree("""{"code":0,"data":{"albums":[]}}""")
         assertSame(tree, tree.validateXiaomiResponse(200))
     }
+
+    @Test fun businessErrorsExposeExactCodesWithoutParsingMessagePrefixes() {
+        for (code in listOf(50050, 500500)) {
+            val failure = assertThrows(XiaomiBusinessException::class.java) {
+                mapper.readTree("""{"code":$code,"description":"private-session-token"}""").validateXiaomiResponse(200)
+            }
+            assertEquals(code, failure.code)
+            assertFalse(failure.message!!.contains("private-session-token"))
+        }
+    }
 }

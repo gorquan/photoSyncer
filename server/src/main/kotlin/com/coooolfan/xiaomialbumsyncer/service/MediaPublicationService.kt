@@ -13,22 +13,30 @@ import java.nio.file.Path
 class MediaPublicationService(private val sql: KSqlClient, private val media: CloudMediaService) {
     fun process(details: List<CrontabHistoryDetail>, systemConfig: SystemConfig) =
         MediaFileLocks.group(MediaIdentity.of(details.first().asset).groupKey) {
-            val ids = details.map { it.asset.id }.distinct()
-            val present = ids.chunked(200).flatMap { batch -> sql.executeQuery(Asset::class) {
-                where(table.id valueIn batch)
-                select(table.id, table.cloudDeleted)
-            } }
-            if (present.size != ids.size || present.any { it._2 }) {
-                val reason = "云端资源已删除或不可用，取消发布，等待删除同步"
+            try {
+                requireCurrentPresence(details)
+            } catch (failure: IllegalArgumentException) {
                 sql.executeUpdate(CrontabHistoryDetail::class) {
                     set(table.publicationStatus, "FAILED")
-                    set(table.message, reason)
+                    set(table.message, failure.message)
                     where(table.id valueIn details.map { it.id })
                 }
-                throw IllegalArgumentException(reason)
+                throw failure
             }
             processLocked(details, systemConfig)
         }
+
+    private fun requireCurrentPresence(details: List<CrontabHistoryDetail>) {
+        val ids = details.map { it.asset.id }.distinct()
+        val present = ids.chunked(200).flatMap { batch -> sql.executeQuery(Asset::class) {
+            where(table.id valueIn batch)
+            select(table.id, table.cloudDeleted, table.currentVersion)
+        } }
+        require(present.size == ids.size && present.none { it._2 }) {
+            "云端资源已删除或不可用，取消发布，等待删除同步"
+        }
+        require(present.all { it._3 }) { "来源版本已变化，取消旧版本发布，下次同步将重试" }
+    }
 
     private fun processLocked(details: List<CrontabHistoryDetail>, systemConfig: SystemConfig) {
         val task = details.first().crontabHistory.crontab
@@ -69,6 +77,7 @@ class MediaPublicationService(private val sql: KSqlClient, private val media: Cl
                         where(table.id eq detail.id)
                     }
                 },
+                beforeCommit = { requireCurrentPresence(details) },
                 validationFailure = { detail, _ ->
                     sql.executeUpdate(CrontabHistoryDetail::class) {
                         set(table.downloadCompleted, false)

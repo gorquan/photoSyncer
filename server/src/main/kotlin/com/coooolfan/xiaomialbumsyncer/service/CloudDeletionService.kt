@@ -5,6 +5,7 @@ import com.coooolfan.xiaomialbumsyncer.model.*
 import com.coooolfan.xiaomialbumsyncer.utils.MediaIdentity
 import com.coooolfan.xiaomialbumsyncer.utils.isAudioAlbum
 import com.coooolfan.xiaomialbumsyncer.xiaomicloud.XiaoMiApi
+import com.coooolfan.xiaomialbumsyncer.xiaomicloud.XiaomiGalleryPresenceUncertain
 import org.babyfish.jimmer.sql.kt.KSqlClient
 import org.babyfish.jimmer.sql.kt.ast.expression.*
 import org.noear.solon.annotation.Managed
@@ -75,9 +76,14 @@ class CloudDeletionService(
         val states = groups.associate { group ->
             group.groupKey to when {
                 group.groupKey in live -> CloudPresence.LIVE
-                // A confirmed, persisted deletion intent survives later purge and interrupted cleanup.
-                group.assets.all { it.cloudDeleted } -> CloudPresence.DELETED
-                else -> probe(group.identity)
+                else -> try {
+                    // A restored object may now belong to an album outside this task's selection.
+                    probe(group.identity)
+                } catch (uncertain: XiaomiGalleryPresenceUncertain) {
+                    // A previous confirmed intent survives purge, but not an observable restoration.
+                    if (group.identity.provider == CloudProvider.XIAOMI && group.assets.all { it.cloudDeleted }) CloudPresence.DELETED
+                    else throw uncertain
+                }
             }
         }
         synchronized(media) {

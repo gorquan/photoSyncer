@@ -7,7 +7,11 @@ import java.time.LocalDate
 data class AlbumTimeline(
     val indexHash: String,
     val dayCount: Map<LocalDate, Long>
-)
+) {
+    /** An album-level hash cannot identify replacements or additions hidden by deletions per day. */
+    fun daysToRefreshSince(previous: AlbumTimeline): Set<LocalDate> =
+        if (indexHash == previous.indexHash) emptySet() else dayCount.filterValues { it > 0 }.keys
+}
 
 val EMPTY_ALBUM_TIMELINE = AlbumTimeline("-1", emptyMap())
 

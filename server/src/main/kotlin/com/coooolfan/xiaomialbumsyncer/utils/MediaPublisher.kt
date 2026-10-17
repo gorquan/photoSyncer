@@ -5,6 +5,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.StandardCopyOption.*
 import java.nio.file.AtomicMoveNotSupportedException
 import java.security.MessageDigest
@@ -36,10 +37,11 @@ class MediaPublisher(private val root: Path) {
         transform: (CrontabHistoryDetail, Path) -> Unit,
         evidence: (CrontabHistoryDetail, PublishedResource) -> Unit = { _, _ -> },
         validationFailure: (CrontabHistoryDetail, Exception) -> Unit = { _, _ -> },
+        beforeCommit: () -> Unit = {},
     ): PublicationReceipt {
         require(details.isNotEmpty())
         return MediaFileLocks.group(MediaIdentity.of(details.first().asset).groupKey) {
-            publishLocked(group, layout, fingerprint, details, download, transform, evidence, validationFailure)
+            publishLocked(group, layout, fingerprint, details, download, transform, evidence, validationFailure, beforeCommit)
         }
     }
 
@@ -48,19 +50,20 @@ class MediaPublisher(private val root: Path) {
         download: (Asset, Path) -> Boolean, transform: (CrontabHistoryDetail, Path) -> Unit,
         evidence: (CrontabHistoryDetail, PublishedResource) -> Unit,
         validationFailure: (CrontabHistoryDetail, Exception) -> Unit,
+        beforeCommit: () -> Unit,
     ): PublicationReceipt {
         require(details.isNotEmpty())
         val absoluteRoot = canonical(root)
         val config = details.first().crontabHistory.crontab.config
-        if (!config.targetPath.contains("${'$'}{")) require(!absoluteRoot.startsWith(canonical(Path.of(config.targetPath.trim())))) {
+        if (!config.targetPath.contains("${'$'}{")) require(disjoint(absoluteRoot, canonical(Path.of(config.targetPath.trim())))) {
             "原件存储目录必须位于照片索引目标根目录之外"
         }
         if (details.any { MediaIdentity.of(it.asset).liveCompanion }) require(details.any {
             MediaIdentity.of(it.asset).role == "resOriginal" && it.asset.type == AssetType.IMAGE
         }) { "实况照片缺少主图片，资源组尚未发布" }
         details.forEach {
-            val output = Path.of(it.filePath).toAbsolutePath().normalize()
-            require(!absoluteRoot.startsWith(output.parent)) { "原件存储目录必须位于照片索引目标目录之外" }
+            val output = canonical(Path.of(it.filePath))
+            require(disjoint(absoluteRoot, output.parent)) { "原件存储目录必须位于照片索引目标目录之外" }
         }
         Files.createDirectories(absoluteRoot)
         val receiptPath = absoluteRoot.resolve("receipts/${hash(group + layout)}.json")
@@ -72,6 +75,7 @@ class MediaPublisher(private val root: Path) {
                     (!config.rewriteFileSystemTime || Files.getLastModifiedTime(Path.of(it.path)).toInstant() ==
                         details.first { detail -> detail.filePath == it.path }.asset.dateTaken)
             }) {
+            beforeCommit()
             previous.outputs.forEach { output -> evidence(details.first { it.filePath == output.path }, output) }
             return previous
         }
@@ -107,9 +111,15 @@ class MediaPublisher(private val root: Path) {
                 copy to output
             }
             return MediaFileLocks.ownership {
+                beforeCommit()
                 val outputs = prepared.map { it.second }
                 val owned = (previous?.ownedPaths.orEmpty() + previous?.outputs.orEmpty().map { it.path } + outputs.map { it.path }).distinct()
                 val ownedHashes = previous?.ownedHashes.orEmpty() + previous?.outputs.orEmpty().associate { it.path to it.outputSha256 } + outputs.associate { it.path to it.outputSha256 }
+                val obsolete = owned.filter { old -> outputs.none { it.path == old } }
+                val retained = if (obsolete.isEmpty()) emptySet() else retainedPaths(receiptPath)
+                require(obsolete.all { canonical(Path.of(it)) in retained || noSymlinks(Path.of(it)) }) {
+                    "旧导出路径包含符号链接，保留该文件，请检查后重试"
+                }
                 val pending = PublicationReceipt(group, layout, fingerprint, false, outputs, owned, ownedHashes)
                 // Persist before the first rename: interruption/DB failure remains repairable next run.
                 write(receiptPath, pending)
@@ -128,8 +138,10 @@ class MediaPublisher(private val root: Path) {
                     } finally { Files.deleteIfExists(sibling) }
                 }
                 // Only receipt-owned obsolete exports in this exact layout are eligible for removal.
-                owned.filter { old -> outputs.none { it.path == old } }.forEach { old ->
+                obsolete.forEach { old ->
                     val path = Path.of(old)
+                    if (canonical(path) in retained) return@forEach
+                    require(noSymlinks(path)) { "旧导出路径包含符号链接，保留该文件，请检查后重试" }
                     if (Files.exists(path)) {
                         require(ownedHashes[old]?.let { matches(path, it) } == true) { "旧导出文件已被外部修改，保留该文件，请检查后重试" }
                         Files.delete(path)
@@ -163,6 +175,25 @@ class MediaPublisher(private val root: Path) {
         var existing = absolute
         while (!Files.exists(existing)) existing = existing.parent ?: return absolute
         return existing.toRealPath().resolve(existing.relativize(absolute)).normalize()
+    }
+
+    private fun disjoint(first: Path, second: Path): Boolean = !first.startsWith(second) && !second.startsWith(first)
+
+    private fun retainedPaths(receiptPath: Path): Set<Path> {
+        require(noSymlinks(receiptPath.parent)) { "发布凭证目录包含符号链接，无法确认其他任务引用" }
+        val retained = mutableSetOf<Path>()
+        Files.newDirectoryStream(receiptPath.parent, "*.json").use { paths ->
+            for (path in paths) {
+                if (path == receiptPath) continue
+                require(noSymlinks(path) && Files.isRegularFile(path, NOFOLLOW_LINKS)) { "发布凭证路径不安全，无法确认其他任务引用" }
+                val receipt = mapper.readValue<PublicationReceipt>(Files.readString(path))
+                require(receipt.version == VERSION && path.fileName.toString() == "${hash(receipt.group + receipt.layout)}.json") {
+                    "发布凭证不完整，无法确认其他任务引用"
+                }
+                retained += (receipt.ownedPaths + receipt.outputs.map { it.path }).map { canonical(Path.of(it)) }
+            }
+        }
+        return retained
     }
 
     private fun verifySource(asset: Asset, config: CrontabConfig, digest: OriginalDigests): VerificationStatus {

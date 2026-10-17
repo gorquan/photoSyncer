@@ -64,7 +64,7 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
         val albumsDayCountNeedRefresh = mutableMapOf<Long, Set<LocalDate>>()
         for ((albumRemoteId, timelineLatest) in albumTimelinesLatest) {
             val timelineHistory = albumTimelinesHistory[albumRemoteId] ?: EMPTY_ALBUM_TIMELINE
-            albumsDayCountNeedRefresh[albumRemoteId] = (timelineLatest - timelineHistory).filter { it.value > 0 }.keys
+            albumsDayCountNeedRefresh[albumRemoteId] = timelineLatest.daysToRefreshSince(timelineHistory)
             sql.executeUpdate(Album::class) {
                 set(table.assetCount, timelineLatest.dayCount.values.sum())
                 where(table.remoteKey eq albumRemoteId.toString())
@@ -108,16 +108,26 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
         val albums = crontabAlbums(crontab)
         if (media.isICloud(crontab.accountId)) refreshICloudAlbumCounts(albums)
 
-        runBlocking(Dispatchers.IO) {
-            val semaphore = Semaphore(5)
-            albums.map { album ->
-                async { semaphore.withPermit { refreshAlbumFull(album) } }
-            }.awaitAll()
+        refreshWithTimelineSnapshot(crontabHistory,
+            snapshot = if (captureTimelineSnapshot) ({ fetchAlbumsTimelineSnapshot(crontab.accountId, albums) }) else null,
+        ) {
+            runBlocking(Dispatchers.IO) {
+                val semaphore = Semaphore(5)
+                albums.map { album ->
+                    async { semaphore.withPermit { refreshAlbumFull(album) } }
+                }.awaitAll()
+            }
         }
-        if (captureTimelineSnapshot) {
+    }
+
+    internal fun refreshWithTimelineSnapshot(history: CrontabHistory, snapshot: (() -> Map<Long, AlbumTimeline>)?, refresh: () -> Unit) {
+        // Capture before enumeration, so uploads during pagination remain visible to the next run.
+        val baseline = snapshot?.invoke()
+        refresh()
+        if (baseline != null) {
             sql.executeUpdate(CrontabHistory::class) {
-                set(table.timelineSnapshot, fetchAlbumsTimelineSnapshot(crontab.accountId, albums))
-                where(table.id eq crontabHistory.id)
+                set(table.timelineSnapshot, baseline)
+                where(table.id eq history.id)
             }
         }
     }

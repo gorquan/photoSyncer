@@ -15,7 +15,8 @@ import java.time.Instant
 import javax.imageio.ImageIO
 
 class MediaPublisherTest {
-    @TempDir lateinit var directory: Path
+    @TempDir lateinit var temporary: Path
+    private val directory get() = temporary.toRealPath()
     private val jpeg by lazy { ByteArrayOutputStream().also { ImageIO.write(BufferedImage(2, 3, BufferedImage.TYPE_INT_RGB), "jpg", it) }.toByteArray() }
     private val mov = ByteBuffer.allocate(25).putInt(9).put("mdat".toByteArray()).put(1).putInt(8).put("moov".toByteArray()).putInt(8).put("wide".toByteArray()).array()
     private val mapper = jacksonObjectMapper()
@@ -202,5 +203,78 @@ class MediaPublisherTest {
 
     @Test fun orphanCompanionCannotBeReportedAsLiveGroup() {
         assertThrows(IllegalArgumentException::class.java) { publish(listOf(detail("resOriginalVidCompl"))) }
+    }
+
+    @Test fun indexedDestinationInsideArchiveRootIsRejectedBeforeDownload() {
+        val input = detail()
+        val archiveRoot = directory.resolve("archive")
+        val nested = CrontabHistoryDetail(input) {
+            crontabHistory = CrontabHistory(input.crontabHistory) {
+                crontab = Crontab(input.crontabHistory.crontab) {
+                    config = input.crontabHistory.crontab.config.copy(targetPath = archiveRoot.resolve("out").toString())
+                }
+            }
+            filePath = archiveRoot.resolve("out/photo.jpg").toString()
+        }
+        var downloaded = false
+        assertThrows(IllegalArgumentException::class.java) {
+            MediaPublisher(archiveRoot).publish("group", nested.crontabHistory.crontab.config.targetPath, "v", listOf(nested),
+                { _, path -> downloaded = true; Files.write(path, jpeg); true }, { _, _ -> })
+        }
+        assertFalse(downloaded)
+        assertFalse(Files.exists(Path.of(nested.filePath)))
+    }
+
+    @Test fun presenceChangeDuringPreparationCannotCommitExportsOrReceipt() {
+        val input = detail()
+        var deleted = false
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            MediaPublisher(directory.resolve("archive")).publish("group", directory.resolve("out").toString(), "v", listOf(input),
+                { _, path -> Files.write(path, jpeg); true }, { _, _ -> deleted = true },
+                beforeCommit = { require(!deleted) { "deleted during download" } })
+        }
+        assertEquals("deleted during download", failure.message)
+        assertFalse(Files.exists(Path.of(input.filePath)))
+        assertFalse(Files.exists(directory.resolve("archive/receipts")))
+        // A validated original remains available for retry or confirmed deletion cleanup.
+        assertEquals(1L, Files.list(directory.resolve("archive/originals")).use { paths ->
+            paths.filter { it.fileName.toString().endsWith(".original") }.count()
+        })
+    }
+
+    @Test fun receiptReuseAlsoRechecksPresence() {
+        val input = detail()
+        val published = publish(listOf(input))
+        var checked = false
+        assertThrows(IllegalArgumentException::class.java) {
+            MediaPublisher(directory.resolve("archive")).publish("group", directory.resolve("out").toString(), "v1", listOf(input),
+                { _, _ -> fail("receipt should be reusable") }, { _, _ -> fail("receipt should be reusable") },
+                beforeCommit = { checked = true; throw IllegalArgumentException("restored source version changed") })
+        }
+        assertTrue(checked)
+        assertArrayEquals(jpeg, Files.readAllBytes(Path.of(published.outputs.single().path)))
+    }
+
+    @Test fun obsoleteExportBehindSymlinkAncestorIsPreserved() {
+        val input = detail()
+        publish(listOf(input))
+        val oldDirectory = Path.of(input.filePath).parent
+        val elsewhere = directory.resolve("external")
+        Files.move(oldDirectory, elsewhere)
+        Files.createSymbolicLink(oldDirectory, elsewhere)
+        assertThrows(IllegalArgumentException::class.java) {
+            publish(listOf(detail(version = "v2", extension = "jpeg")), "v2")
+        }
+        assertArrayEquals(jpeg, Files.readAllBytes(elsewhere.resolve("photo.jpg")))
+    }
+
+    @Test fun invalidOtherReceiptCannotAuthorizeObsoleteCleanup() {
+        val input = detail()
+        publish(listOf(input))
+        Files.writeString(directory.resolve("archive/receipts/broken.json"), "invalid")
+        assertThrows(Exception::class.java) {
+            publish(listOf(detail(version = "v2", extension = "jpeg")), "v2")
+        }
+        assertArrayEquals(jpeg, Files.readAllBytes(Path.of(input.filePath)))
     }
 }

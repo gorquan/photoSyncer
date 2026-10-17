@@ -81,6 +81,57 @@ class MediaDeletionServiceTest {
         } finally { pool.shutdownNow() }
     }
 
+    @Test fun supersededSourceVersionIsRejectedBeforeAnyDownload() = withStore { sql, media, detail ->
+        sql.executeUpdate(Asset::class) { set(table.currentVersion, false) }
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            MediaPublicationService(sql, media).process(listOf(detail), SystemConfig { exifToolPath = "unused" })
+        }
+        assertTrue(failure.message!!.contains("版本"), failure.message)
+        assertEquals("FAILED", sql.findById(CrontabHistoryDetail::class, detail.id)!!.publicationStatus)
+        assertFalse(Files.exists(Path.of(detail.filePath)))
+    }
+
+    @Test fun incompleteTimelineHistoryCannotReplaceLastFetchedBaseline() = withStore { sql, _, detail ->
+        val task = detail.crontabHistory.crontab
+        val snapshots = (1L..3L).map { number -> mapOf(1L to AlbumTimeline("hash-$number", emptyMap())) }
+        val fetched = sql.saveCommand(CrontabHistory {
+            crontabId = task.id; startTime = Instant.ofEpochSecond(1); endTime = Instant.ofEpochSecond(2)
+            fetchedAllAssets = true; timelineSnapshot = snapshots[0]; executionStatus = "PARTIAL"
+        }, SaveMode.INSERT_ONLY).execute().modifiedEntity
+        sql.saveCommand(CrontabHistory {
+            crontabId = task.id; startTime = Instant.ofEpochSecond(3); endTime = Instant.ofEpochSecond(4)
+            fetchedAllAssets = false; timelineSnapshot = snapshots[1]; executionStatus = "FAILED"
+        }, SaveMode.INSERT_ONLY).execute()
+        val running = sql.saveCommand(CrontabHistory {
+            crontabId = task.id; startTime = Instant.ofEpochSecond(5); endTime = null
+            fetchedAllAssets = false; timelineSnapshot = snapshots[2]; executionStatus = "RUNNING"
+        }, SaveMode.INSERT_ONLY).execute().modifiedEntity
+        val service = CrontabService(sql)
+        assertEquals(snapshots[0], service.getAlbumTimelinesHistory(CrontabHistory(running) { crontab = task }))
+        sql.executeDelete(CrontabHistory::class) { where(table.id eq fetched.id) }
+        assertTrue(service.getAlbumTimelinesHistory(CrontabHistory(running) { crontab = task }).isEmpty())
+    }
+
+    @Test fun initialTimelineBaselineCannotIncludeUploadsAfterEnumerationStarted() = withStore { sql, media, detail ->
+        val notify = NotifyService(sql)
+        val assets = AssetService(sql, XiaoMiApi(TokenManager(sql, notify)), media, ICloudPhotos(ICloudAccountService(sql, notify)))
+        val day = java.time.LocalDate.of(2026, 10, 10)
+        val initial = mapOf(1L to AlbumTimeline("before-upload", mapOf(day to 1L)))
+        val uploaded = mapOf(1L to AlbumTimeline("after-upload", mapOf(day to 2L)))
+        var remote = initial
+        assets.refreshWithTimelineSnapshot(detail.crontabHistory, snapshot = { remote }) {
+            // An upload after the enumeration's last page was read must be fetched next run.
+            remote = uploaded
+        }
+        val saved = sql.findById(CrontabHistory::class, detail.crontabHistory.id)!!.timelineSnapshot!!
+        assertEquals(initial, saved)
+        assertEquals(setOf(day), remote.getValue(1L).daysToRefreshSince(saved.getValue(1L)))
+        assertThrows(IllegalStateException::class.java) {
+            assets.refreshWithTimelineSnapshot(detail.crontabHistory, snapshot = { remote }) { error("interrupted enumeration") }
+        }
+        assertEquals(initial, sql.findById(CrontabHistory::class, detail.crontabHistory.id)!!.timelineSnapshot)
+    }
+
     private fun withStore(action: (KSqlClient, CloudMediaService, CrontabHistoryDetail) -> Unit) {
         HikariDataSource(HikariConfig().apply { jdbcUrl = "jdbc:sqlite:${directory.resolve("db.sqlite")}"; maximumPoolSize = 1 }).use { source ->
             Flyway.configure().dataSource(source).locations("classpath:db/migration").load().migrate()

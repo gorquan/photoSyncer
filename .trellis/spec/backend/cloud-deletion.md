@@ -16,7 +16,7 @@ Cloud-to-local photo/video deletion for Xiaomi and iCloud tasks. No cloud delete
 
 ## 3. Contracts
 
-Every enabled FULL/TIMELINE/CURSOR run reconciles deletion before ordinary refresh/cursor advancement. Reconciliation performs strict complete selected scans and library probes; no file cleanup follows a failed phase. Presence changes commit only after all provider IO succeeds and the account observation revision still matches. Never hold the media monitor through provider IO or while waiting for logical-group locks.
+Every enabled FULL/TIMELINE/CURSOR run reconciles deletion before ordinary refresh/cursor advancement. Reconciliation performs strict complete selected scans and library probes; no file cleanup follows a failed phase. Previously confirmed tombstones are still probed when absent from selected live scans, so restoration into another album can clear them. Only a typed Xiaomi storage invalid-state (exact business code 50050) can retain an already confirmed tombstone; authentication/network/other business errors abort. Presence changes commit only after all provider IO succeeds and the account observation revision still matches. Never hold the media monitor through provider IO or while waiting for logical-group locks.
 
 Cleanup and publication use the same bounded `MediaFileLocks.group(groupKey)` lock and recheck persisted presence after acquiring it. No provider IO under the ownership lock. Originals and journals use the shared `PHOTO_SYNCER_MEDIA_ROOT` resolution. Journal path is `deletions/SHA256(taskId/groupKey).json`; it takes over receipt evidence before active receipts are removed. Retained active receipts protect paths/originals; pending deletion journals do not create circular ownership. Every retry merges current receipts and original inventory, including after restore and another deletion.
 
@@ -32,7 +32,9 @@ Persist cleanup results after each group. CHECKING/RUNNING deletion reports beco
 | iCloud complete requested lookup with explicit deletion flags or per-record NOT_FOUND/UNKNOWN_ITEM | Confirm deletion |
 | Valid direct live record/URL after album move or favorite/hidden change | Preserve; restore presence if necessary |
 | Xiaomi 50050, unknown error, auth/network failure or malformed/incomplete scan | Abort detection; preserve files |
-| Previously confirmed tombstone absent from later scan after purge | Continue cleanup retry |
+| Previously confirmed Xiaomi tombstone plus exact storage 50050 after purge | Continue cleanup retry |
+| Previously confirmed tombstone with fresh direct live record outside selected albums | Restore presence; preserve files |
+| Previously confirmed tombstone with auth/network/unknown business error | Abort detection; preserve files |
 | New live observation | Restore presence; allow fresh publication |
 | Modified file, corrupt evidence, unsafe path/symlink | CONFLICT; preserve affected file |
 | Retained other-task receipt | DEFERRED; preserve referenced media |
@@ -46,7 +48,7 @@ Good: confirmed Apple deletion retires every role/membership/version, deletes ow
 
 ## 6. Tests Required
 
-Protocol tests assert strict pages and exact deletion/live/error classification. SQLite tests assert account/member/source-version scope, independent currentVersion, revision rejection, persisted retry and restoration. Temp-file tests assert paired cleanup, failed-prepare originals, old layouts, shared refs without circular wait, actual partial counts, journal retry, missing/modified/unowned/symlink/escaped files and restore-delete-new-version inventory. Lock tests must prove stale publication reads fresh DB tombstones after waiting. JVM API E2E uses synthetic cloud mutations and verifies exported bytes, original absence and public history. Private cloud testing stays read-only.
+Protocol tests assert strict pages and exact deletion/live/error classification. SQLite tests assert account/member/source-version scope, independent currentVersion, revision rejection, persisted retry and restoration outside selected albums. Error classification uses numeric business codes, never message-prefix matching. Temp-file tests assert paired cleanup, failed-prepare originals, old layouts, shared refs without circular wait, actual partial counts, journal retry, missing/modified/unowned/symlink/escaped files and restore-delete-new-version inventory. Lock tests must prove stale publication reads fresh DB tombstones after waiting. JVM API E2E uses synthetic cloud mutations and verifies exported bytes, original absence and public history. Private cloud testing stays read-only.
 
 ## 7. Wrong vs Correct
 
