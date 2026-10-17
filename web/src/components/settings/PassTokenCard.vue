@@ -72,6 +72,7 @@ async function checkAuthentication(account: Account) {
 const saving = ref(false)
 const showDialog = ref(false)
 const isEditMode = ref(false)
+const editingUserId = ref('')
 const isInsecureContext = ref(false)
 const dialogStep = ref<'provider' | 'method' | 'qr' | 'manual' | 'icloud'>('provider')
 const slideDir = ref<'slide-left' | 'slide-right'>('slide-left')
@@ -146,7 +147,8 @@ function selectManual() {
 
 function goBack() {
   slideDir.value = 'slide-right'
-  dialogStep.value = ['method', 'icloud'].includes(dialogStep.value) ? 'provider' : 'method'
+  dialogStep.value =
+    !isEditMode.value && ['method', 'icloud'].includes(dialogStep.value) ? 'provider' : 'method'
 }
 
 async function refreshQrSession() {
@@ -208,6 +210,7 @@ function scheduleQrPoll(sessionId: string, seq: number) {
 
 function openAddDialog() {
   isEditMode.value = false
+  editingUserId.value = ''
   form.value = { id: 0, userId: '', nickname: '', passToken: '' }
   slideDir.value = 'slide-left'
   dialogStep.value = 'provider'
@@ -216,6 +219,7 @@ function openAddDialog() {
 
 function openEditDialog(account: Account) {
   isEditMode.value = true
+  editingUserId.value = account.userId
   // 根据 update 接口定义，passToken 是必填的
   form.value = {
     id: account.id,
@@ -223,7 +227,8 @@ function openEditDialog(account: Account) {
     nickname: account.nickname,
     passToken: '',
   }
-  dialogStep.value = account.provider === 'ICLOUD' ? 'icloud' : 'manual'
+  slideDir.value = 'slide-left'
+  dialogStep.value = account.provider === 'ICLOUD' ? 'icloud' : 'method'
   showDialog.value = true
 }
 
@@ -391,6 +396,7 @@ function confirmDelete(account: Account) {
             />
             <Button
               icon="pi pi-pencil"
+              :aria-label="t('tokens.account.edit')"
               text
               rounded
               severity="secondary"
@@ -412,6 +418,12 @@ function confirmDelete(account: Account) {
   <!-- 添加/编辑 弹窗 -->
   <Dialog v-model:visible="showDialog" modal :header="dialogHeader" class="w-full sm:w-[480px]">
     <div class="-mx-1 overflow-x-hidden px-1">
+      <p
+        v-if="isEditMode && ['method', 'qr'].includes(dialogStep)"
+        class="mb-3 text-sm text-slate-600 dark:text-slate-300"
+      >
+        {{ t('tokens.account.qrRenewalHint', { userId: editingUserId }) }}
+      </p>
       <Transition :name="slideDir" mode="out-in">
         <!-- 渠道选择 -->
         <div v-if="dialogStep === 'provider'" key="provider" class="flex flex-col gap-3 pt-2">
@@ -553,7 +565,7 @@ function confirmDelete(account: Account) {
     <template #footer>
       <div class="flex items-center w-full mt-4">
         <Button
-          v-if="!isEditMode && dialogStep !== 'provider'"
+          v-if="isEditMode ? ['qr', 'manual'].includes(dialogStep) : dialogStep !== 'provider'"
           :label="t('common.action.back')"
           icon="pi pi-arrow-left"
           severity="secondary"
