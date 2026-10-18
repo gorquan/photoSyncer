@@ -175,7 +175,8 @@ class ApiE2eSuite {
         assertTrue(Files.isRegularFile(downloadedFile), "下载文件不存在: $downloadedFile")
         assertEquals(cameraAssets.first().path("checksum").asText(), java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-1").digest(Files.readAllBytes(downloadedFile))))
         assertEquals("PUBLISHED", detail.path("publicationStatus").asText())
-        assertTrue(Files.isRegularFile(Path.of(detail.path("archivePath").asText())))
+        assertTrue(detail.path("archivePath").isMissingNode || detail.path("archivePath").isNull)
+        assertFalse(Files.exists(workDir.resolve("fallback/media/originals")))
         assertEquals(1, javax.imageio.ImageIO.read(downloadedFile.toFile()).width)
         mock.awaitRequest("/_control/v1/notify", Duration.ofSeconds(10))
 
@@ -589,7 +590,7 @@ class ApiE2eSuite {
         api.delete("/api/crontab/$mixedCrontabId").expect(200)
 
         assertTrue(mock.routeCount("/sfs/ns/recorder/dir/0/list") >= 3)
-        assertEquals(originalRecordingTransfers, mock.routePrefixCount("/sfs/ns/recorder/file/201/cb/"), "重复导出应复用已经校验的原件")
+        assertEquals(originalRecordingTransfers + 1, mock.routePrefixCount("/sfs/ns/recorder/file/201/cb/"), "新目标目录应从云端下载，不复用长期原件副本")
         assertEquals(0, mock.timelineCount(-1), "录音是独立远端资源，不应请求 gallery timeline 的 -1")
         assertTrue(mock.timelineCount(1) >= 1, "混合任务应只为真实相册请求时间线")
     }
@@ -873,7 +874,7 @@ class ApiE2eSuite {
         api.delete("/api/crontab/$crontabId").expect(200)
     }
 
-    /** Synthetic cloud only: managed exports and originals mirror confirmed deletion in every sync mode. */
+    /** Synthetic cloud only: single-copy exports mirror confirmed deletion in every sync mode. */
     private fun executeCloudDeletionWorkflow(api: ApiClient, mock: MockXiaomiApiServer, workDir: Path,
                                             accountId: Long, baseConfig: LinkedHashMap<String, Any?>) {
         for ((index, mode) in listOf("FULL", "TIMELINE", "CURSOR").withIndex()) {
@@ -900,27 +901,29 @@ class ApiE2eSuite {
                 return api.json(api.get("/api/crontab").expect(200)).first { it.path("id").asLong() == task }
                     .path("histories").first { it.path("id").asLong() == id }
             }
-            fun paths(history: JsonNode): Pair<Path, Path> {
+            fun exportedPath(history: JsonNode): Path {
                 val details = api.json(api.get("/api/crontab/history/${history.path("id").asLong()}/details?pageIndex=0&pageSize=10").expect(200)).path("rows")
                 val detail = details.single()
                 assertEquals("PUBLISHED", detail.path("publicationStatus").asText())
-                return Path.of(detail.path("filePath").asText()) to Path.of(detail.path("archivePath").asText())
+                assertTrue(detail.path("archivePath").isMissingNode || detail.path("archivePath").isNull)
+                assertFalse(Files.exists(workDir.resolve("fallback/media/originals")))
+                return Path.of(detail.path("filePath").asText())
             }
             val first = run(); assertEquals("SUCCESS", first.path("executionStatus").asText())
-            val (export, archive) = paths(first)
+            val export = exportedPath(first)
             val bytes = Files.readAllBytes(export)
-            assertTrue(Files.exists(archive))
+            assertFalse(Files.exists(workDir.resolve("fallback/media/originals")))
             mutate(mapOf("op" to "deleteAssets", "albumId" to remoteAlbum, "ids" to listOf(remoteAsset)))
             val deleted = run()
             assertEquals("SUCCESS", deleted.path("executionStatus").asText(), deleted.toString())
             val report = deleted.path("deletionReport")
             assertEquals("COMPLETE", report.path("status").asText())
-            assertEquals(1, report.path("exportsDeleted").asInt()); assertEquals(1, report.path("originalsDeleted").asInt())
-            assertFalse(Files.exists(export)); assertFalse(Files.exists(archive))
+            assertEquals(1, report.path("exportsDeleted").asInt()); assertEquals(0, report.path("originalsDeleted").asInt())
+            assertFalse(Files.exists(export)); assertFalse(Files.exists(workDir.resolve("fallback/media/originals")))
             assertEquals(0, run().path("deletionReport").path("exportsDeleted").asInt())
             add("restoreAssets")
-            val restored = run(); paths(restored)
-            assertTrue(Files.exists(export)); assertTrue(Files.exists(archive))
+            val restored = run(); exportedPath(restored)
+            assertTrue(Files.exists(export)); assertFalse(Files.exists(workDir.resolve("fallback/media/originals")))
             // Changed user bytes survive deletion and the public run is visibly incomplete.
             Files.writeString(export, "externally edited")
             mutate(mapOf("op" to "deleteAssets", "albumId" to remoteAlbum, "ids" to listOf(remoteAsset)))
@@ -932,8 +935,8 @@ class ApiE2eSuite {
             Files.write(export, bytes)
             val retried = run()
             assertEquals("SUCCESS", retried.path("executionStatus").asText())
-            assertFalse(Files.exists(export)); assertFalse(Files.exists(archive))
-            add("restoreAssets"); paths(run())
+            assertFalse(Files.exists(export)); assertFalse(Files.exists(workDir.resolve("fallback/media/originals")))
+            add("restoreAssets"); exportedPath(run())
             // Incomplete authoritative enumeration stops before ordinary refresh/cursor movement or cleanup.
             mutate(mapOf("op" to "deleteAlbum", "albumId" to remoteAlbum))
             val beforeFull = mock.routeCount("/gallery/album/full")
@@ -951,7 +954,7 @@ class ApiE2eSuite {
             assertEquals(beforeCursor, mock.routeCount("/gallery/allitems"))
             assertEquals(beforeGallery + 1, mock.routeCount("/gallery/user/galleries"))
             assertEquals(beforeStorage, mock.routeCount("/gallery/storage"))
-            assertTrue(Files.exists(export)); assertTrue(Files.exists(archive))
+            assertTrue(Files.exists(export)); assertFalse(Files.exists(workDir.resolve("fallback/media/originals")))
             // Failure/deletion-only rows must not disappear into collapsed zero-asset histories.
             val publicGroup = api.json(api.get("/api/crontab/$task/histories?pageIndex=0&pageSize=10").expect(200)).path("rows").first()
             assertEquals(1, publicGroup.path("runCount").asInt())
@@ -975,6 +978,7 @@ class ApiE2eSuite {
         val albumId = findAlbumId(api.json(api.get("/api/album/latest/$accountId").expect(200)), remoteAlbum.toString())
         val config = LinkedHashMap(baseConfig).apply {
             this["syncCloudDeletes"] = false; this["synologyPhotos"] = true; this["notify"] = false
+            this["skipExistingFile"] = true
             this["targetPath"] = workDir.resolve("timeline-replacements").toString()
         }
         val task = api.json(api.post("/api/crontab", mapOf("name" to "Timeline replacements", "description" to "Backup replacements",
