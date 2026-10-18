@@ -189,6 +189,18 @@ class ApiE2eSuite {
 
         executeMcpWorkflow(api, crontabId, historyId)
 
+        val beforeMigration = api.json(api.get("/api/crontab").expect(200)).first { it.path("id").asLong() == crontabId }
+            .path("histories").maxOf { it.path("id").asLong() }
+        api.put("/api/crontab/$crontabId", mapOf("config" to (config + mapOf("synologyPhotos" to true)))).expect(200)
+        assertTrue(Files.exists(downloadedFile), "enabling Photos must keep old files until replacement succeeds")
+        api.post("/api/crontab/$crontabId/executions").expect(200)
+        val migratedHistory = awaitCompletedHistory(api, crontabId, afterHistoryId = beforeMigration)
+        val migratedDetails = api.json(api.get("/api/crontab/history/$migratedHistory/details?pageIndex=0&pageSize=10").expect(200)).path("rows")
+        val migratedFile = Path.of(migratedDetails.first().path("filePath").asText())
+        assertEquals("PUBLISHED", migratedDetails.first().path("publicationStatus").asText())
+        assertTrue(Files.isRegularFile(migratedFile))
+        assertFalse(Files.exists(downloadedFile), "verified replacement must retire the old album-layout file")
+
         api.delete("/api/crontab/$crontabId/histories").expect(200)
         val historiesAfterClear = api.json(api.get("/api/crontab").expect(200))
             .first { it.path("id").asLong() == crontabId }
@@ -240,6 +252,7 @@ class ApiE2eSuite {
 
         executeCloudDeletionWorkflow(api, mock, workDir, accountId, config)
         executeTimelineReplacementWorkflow(api, mock, workDir, accountId, config)
+        executeImmutableModesWorkflow(api, accountId, cameraAlbumId, screenshotsAlbumId, config)
         api.delete("/api/account/$accountId").expect(200)
         api.post(
             "/api/system-config/password",
@@ -247,6 +260,50 @@ class ApiE2eSuite {
         ).expect(200)
         api.delete("/api/token").expect(200)
         api.get("/api/account").expect(401)
+    }
+
+    private fun executeImmutableModesWorkflow(api: ApiClient, accountId: Long, albumId: Long, otherAlbumId: Long,
+                                               baseConfig: LinkedHashMap<String, Any?>) {
+        for (mode in listOf("FULL", "TIMELINE", "CURSOR")) for (mirror in listOf(false, true)) {
+            if (mode == "CURSOR" && mirror) continue
+            // Missing serialized flags represent legacy backup/Photos-off configurations.
+            val config = LinkedHashMap(baseConfig).apply { if (mirror) this["syncCloudDeletes"] = true }
+            val task = api.json(api.post("/api/crontab", mapOf("name" to "Fixed modes", "description" to "original",
+                "enabled" to false, "syncMode" to mode, "accountId" to accountId, "albumIds" to listOf(albumId),
+                "config" to config)).expect(200)).path("id").asLong()
+            fun saved() = api.json(api.get("/api/crontab").expect(200)).first { it.path("id").asLong() == task }
+            for (other in listOf("FULL", "TIMELINE", "CURSOR").filter { it != mode }) {
+                val rejected = api.put("/api/crontab/$task", mapOf("syncMode" to other, "description" to "must not save"))
+                assertEquals(400, rejected.status, rejected.body)
+                assertTrue(rejected.body.contains("扫描方式"), rejected.body)
+            }
+            val rejected = api.put("/api/crontab/$task", mapOf("name" to "must not save", "config" to
+                (config + mapOf("syncCloudDeletes" to !mirror, "downloaders" to 99))))
+            assertEquals(400, rejected.status, rejected.body)
+            assertTrue(rejected.body.contains("备份／镜像"), rejected.body)
+            val unchanged = saved()
+            assertEquals(mode, unchanged.path("syncMode").asText())
+            assertEquals(mirror, unchanged.path("config").path("syncCloudDeletes").asBoolean())
+            assertEquals("Fixed modes", unchanged.path("name").asText())
+            assertEquals("original", unchanged.path("description").asText())
+            assertEquals(1, unchanged.path("config").path("downloaders").asInt())
+            val enabled = config + mapOf("synologyPhotos" to true, "downloaders" to 2)
+            val updated = api.json(api.put("/api/crontab/$task", mapOf("syncMode" to mode, "config" to enabled)).expect(200))
+            assertTrue(updated.path("config").path("synologyPhotos").asBoolean())
+            assertEquals(2, updated.path("config").path("downloaders").asInt())
+            for (disabled in listOf(config, enabled + mapOf("synologyPhotos" to false))) {
+                val result = api.put("/api/crontab/$task", mapOf("description" to "must not save", "config" to disabled))
+                assertEquals(400, result.status, result.body)
+                assertTrue(result.body.contains("不能关闭"), result.body)
+            }
+            api.put("/api/crontab/$task", mapOf("description" to "edited", "albumIds" to listOf(otherAlbumId))).expect(200)
+            val final = saved()
+            assertEquals("edited", final.path("description").asText())
+            assertEquals(listOf(otherAlbumId), final.path("albumIds").map { it.asLong() })
+            assertTrue(final.path("config").path("synologyPhotos").asBoolean())
+            assertEquals(2, final.path("config").path("downloaders").asInt())
+            api.delete("/api/crontab/$task").expect(200)
+        }
     }
 
     /**

@@ -163,6 +163,24 @@ class CloudDeletionServiceTest {
         assertTrue(deletion.deletedGroups(job).isEmpty())
     } }
 
+    @Test fun iCloudPlansRejectModeChangesAndDisablingPhotosBeforeAnyFieldsAreSaved() = withStore { store -> with(store) {
+        val fetcher = org.babyfish.jimmer.sql.kt.fetcher.newFetcher(Crontab::class).by { allScalarFields() }
+        val service = CrontabService(sql)
+        for (patch in listOf(
+            Crontab { id = job.id; syncMode = CrontabSyncMode.CURSOR; name = "must not save" },
+            Crontab { id = job.id; config = job.config.copy(syncCloudDeletes = false); name = "must not save" },
+            Crontab { id = job.id; config = job.config.copy(synologyPhotos = false); name = "must not save" },
+        )) {
+            assertThrows(com.coooolfan.xiaomialbumsyncer.exception.BadRequestException::class.java) {
+                service.updateCrontab(patch, fetcher)
+            }
+            val persisted = sql.findById(Crontab::class, job.id)!!
+            assertEquals(job.name, persisted.name)
+            assertEquals(job.syncMode, persisted.syncMode)
+            assertEquals(job.config, persisted.config)
+        }
+    } }
+
     @Test fun oldConfigDefaultsToBackup() {
         val old = jacksonObjectMapper().readValue<CrontabConfig>("""{"expression":"0 0 * * * ?","timeZone":"UTC","targetPath":"/out","downloadImages":true,"downloadVideos":true,"rewriteExifTime":false,"rewriteExifTimeZone":null}""")
         assertFalse(old.syncCloudDeletes)

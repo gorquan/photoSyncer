@@ -7,6 +7,7 @@ import com.coooolfan.xiaomialbumsyncer.controller.CrontabCurrentStats
 import com.coooolfan.xiaomialbumsyncer.controller.CrontabHistoryGroup
 import com.coooolfan.xiaomialbumsyncer.model.*
 import com.coooolfan.xiaomialbumsyncer.model.dto.CrontabCreateInput
+import org.babyfish.jimmer.ImmutableObjects
 import org.babyfish.jimmer.Page
 import org.babyfish.jimmer.sql.ast.mutation.SaveMode
 import org.babyfish.jimmer.sql.fetcher.Fetcher
@@ -139,13 +140,20 @@ class CrontabService(private val sql: KSqlClient) {
 
 
     fun updateCrontab(crontab: Crontab, fetcher: Fetcher<Crontab>): Crontab {
-        val existing = sql.findById(Crontab::class, crontab.id) ?: throw IllegalArgumentException("定时任务不存在")
-        validateSyncConfig(existing.accountId,
-            if (org.babyfish.jimmer.ImmutableObjects.isLoaded(crontab, "syncMode")) crontab.syncMode else existing.syncMode,
-            if (org.babyfish.jimmer.ImmutableObjects.isLoaded(crontab, "config")) crontab.config else existing.config)
-        val execute = sql.saveCommand(crontab, SaveMode.UPDATE_ONLY).execute(fetcher)
+        val updated = sql.transaction {
+            val existing = sql.findById(Crontab::class, crontab.id) ?: throw IllegalArgumentException("定时任务不存在")
+            if (ImmutableObjects.isLoaded(crontab, "syncMode") && crontab.syncMode != existing.syncMode)
+                throw BadRequestException("计划创建后不能修改扫描方式，请新建计划")
+            val config = if (ImmutableObjects.isLoaded(crontab, "config")) crontab.config else existing.config
+            if (config.syncCloudDeletes != existing.config.syncCloudDeletes)
+                throw BadRequestException("计划创建后不能切换备份／镜像模式，请新建计划")
+            if (existing.config.synologyPhotos && !config.synologyPhotos)
+                throw BadRequestException("计划启用群晖 Photos 适配后不能关闭，请新建计划")
+            validateSyncConfig(existing.accountId, existing.syncMode, config)
+            sql.saveCommand(crontab, SaveMode.UPDATE_ONLY).execute(fetcher).modifiedEntity
+        }
         taskScheduler.initJobs()
-        return execute.modifiedEntity
+        return updated
     }
 
     fun executeCrontab(crontabId: Long) {

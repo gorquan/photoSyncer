@@ -39,6 +39,42 @@ class MediaDeletion(private val root: Path) {
     private val mapper = jacksonObjectMapper()
     private val absoluteRoot = root.toAbsolutePath().normalize()
 
+    /** Discover migration work once per run, rather than scanning receipts for every published group. */
+    fun legacyLayoutGroups(taskId: Long): Set<String> = MediaFileLocks.ownership {
+        val directory = absoluteRoot.resolve("receipts")
+        val groups = mutableSetOf<String>()
+        if (Files.exists(directory, NOFOLLOW_LINKS)) {
+            require(noSymlinks(directory)) { "发布凭证目录包含符号链接，无法迁移旧文件" }
+            Files.newDirectoryStream(directory, "*.json").use { paths -> paths.forEach { path ->
+                require(noSymlinks(path) && Files.isRegularFile(path, NOFOLLOW_LINKS))
+                val receipt = mapper.readValue<PublicationReceipt>(Files.readString(path))
+                require(receipt.version == MediaPublisher.VERSION && path.fileName.toString() == "${hash(receipt.group + receipt.layout)}.json")
+                val prefix = "$taskId/"
+                if (receipt.group.startsWith(prefix) && receipt.group.substringAfterLast('/').toLongOrNull() != null)
+                    groups += receipt.group.removePrefix(prefix).substringBeforeLast('/')
+            } }
+        }
+        val journals = absoluteRoot.resolve("deletions")
+        if (Files.exists(journals, NOFOLLOW_LINKS)) {
+            require(noSymlinks(journals))
+            Files.newDirectoryStream(journals, "*.json").use { paths -> paths.forEach { path ->
+                require(noSymlinks(path) && Files.isRegularFile(path, NOFOLLOW_LINKS))
+                val journal = mapper.readValue<MediaDeletionJournal>(Files.readString(path))
+                if (journal.taskId == taskId && !journal.complete &&
+                    path.fileName.toString() == "${hash("$taskId/${journal.groupKey}/layout-migration")}.json") {
+                    require(journal.version == 1)
+                    groups += journal.groupKey
+                }
+            } }
+        }
+        groups
+    }
+
+    /** Retire album-layout receipts only after a complete, intact Photos replacement exists. */
+    fun retireAlbumLayouts(taskId: Long, groupKey: String): MediaDeletionResult = MediaFileLocks.group(groupKey) {
+        MediaFileLocks.ownership { deleteLocked(taskId, groupKey, {}, legacyLayoutsOnly = true) }
+    }
+
     fun delete(taskId: Long, groupKey: String, stillDeleted: () -> Boolean = { true },
                afterUnlink: (Path) -> Unit = {}): MediaDeletionResult = MediaFileLocks.group(groupKey) {
         val deleted = try { stillDeleted() }
@@ -51,7 +87,8 @@ class MediaDeletion(private val root: Path) {
         MediaFileLocks.ownership { deleteLocked(taskId, groupKey, afterUnlink) }
     }
 
-    private fun deleteLocked(taskId: Long, groupKey: String, afterUnlink: (Path) -> Unit): MediaDeletionResult {
+    private fun deleteLocked(taskId: Long, groupKey: String, afterUnlink: (Path) -> Unit,
+                             legacyLayoutsOnly: Boolean = false): MediaDeletionResult {
         val conflicts = mutableListOf<String>()
         var exportsDeleted = 0
         var originalsDeleted = 0
@@ -63,7 +100,8 @@ class MediaDeletion(private val root: Path) {
                 return result("CONFLICT")
             }
             val receiptDirectory = absoluteRoot.resolve("receipts")
-            val journalPath = absoluteRoot.resolve("deletions/${hash("$taskId/$groupKey")}.json")
+            val journalKey = "$taskId/$groupKey" + if (legacyLayoutsOnly) "/layout-migration" else ""
+            val journalPath = absoluteRoot.resolve("deletions/${hash(journalKey)}.json")
             val active = mutableListOf<Pair<Path, PublicationReceipt>>()
             try {
                 require(noSymlinks(journalPath))
@@ -82,22 +120,47 @@ class MediaDeletion(private val root: Path) {
                 conflicts += "发布凭证不完整或路径不安全，无法确认其他任务引用，已保留文件"
                 return result("CONFLICT")
             }
-            val own = active.filter { belongs(it.second.group, taskId, groupKey) }
-            val retained = active.filterNot { belongs(it.second.group, taskId, groupKey) }.map { it.second }
+            fun owns(receipt: PublicationReceipt) = belongs(receipt.group, taskId, groupKey) &&
+                (!legacyLayoutsOnly || receipt.group != "$taskId/$groupKey")
+            val own = active.filter { owns(it.second) }
+            val retained = active.filterNot { owns(it.second) }.map { it.second }
             var journal = try {
                 if (Files.exists(journalPath, NOFOLLOW_LINKS)) mapper.readValue<MediaDeletionJournal>(Files.readString(journalPath)).also {
                     require(it.version == 1 && it.taskId == taskId && it.groupKey == groupKey)
-                    require(it.receipts.all { receipt -> belongs(receipt.group, taskId, groupKey) && receipt.version == MediaPublisher.VERSION })
+                    require(it.receipts.all { receipt -> owns(receipt) && receipt.version == MediaPublisher.VERSION })
                 } else MediaDeletionJournal(taskId, groupKey)
             } catch (_: Exception) {
                 conflicts += "删除日志损坏，已保留文件"
                 return result("CONFLICT")
             }
-            val originals = try { originalInventory(groupKey) } catch (_: Exception) {
+            if (legacyLayoutsOnly && own.isEmpty() && journal.receipts.isEmpty()) return result("DELETED")
+            val originals = try { if (legacyLayoutsOnly) emptyList() else originalInventory(groupKey) } catch (_: Exception) {
                 conflicts += "原件归属证据不完整或路径不安全，已保留文件"
                 return result("CONFLICT")
             }
-            val mergedReceipts = (journal.receipts + own.map { it.second }).distinct()
+            val migrationPath = absoluteRoot.resolve("deletions/${hash("$taskId/$groupKey/layout-migration")}.json")
+            val migration = if (!legacyLayoutsOnly && Files.exists(migrationPath, NOFOLLOW_LINKS)) {
+                require(noSymlinks(migrationPath))
+                mapper.readValue<MediaDeletionJournal>(Files.readString(migrationPath)).also {
+                    require(it.version == 1 && it.taskId == taskId && it.groupKey == groupKey &&
+                        it.receipts.all { receipt -> owns(receipt) && receipt.version == MediaPublisher.VERSION })
+                }
+            } else null
+            val mergedReceipts = (journal.receipts + own.map { it.second } + migration?.receipts.orEmpty()).distinct()
+            var migratedPaths = emptySet<Path>()
+            if (legacyLayoutsOnly) {
+                val replacements = retained.filter { it.group == "$taskId/$groupKey" && it.complete }
+                val migrated = replacements.flatMap { it.outputs }.map { it.resource }.toSet()
+                if (replacements.isEmpty() || mergedReceipts.any { old -> old.outputs.any { it.resource !in migrated } } ||
+                    replacements.any { receipt -> receipt.outputs.any {
+                        !resourceBelongs(it.resource, groupKey) || !safeExport(normalized(it.path), receipt.layout) ||
+                            !noSymlinks(Path.of(it.path)) || !matches(Path.of(it.path), it.outputSha256)
+                    } }) {
+                    conflicts += "群晖新文件尚未完整发布或校验失败，已保留旧文件"
+                    return result("CONFLICT")
+                }
+                migratedPaths = replacements.flatMap { it.outputs }.map { normalized(it.path) }.toSet()
+            }
             if (mergedReceipts.any { receipt -> receipt.outputs.any {
                 !resourceBelongs(it.resource, groupKey) || !sourceBelongs(it.source, groupKey) ||
                     mapper.readTree(it.source)[0].asText() != it.resource || !validHash(it.originalSha256) ||
@@ -122,6 +185,8 @@ class MediaDeletion(private val root: Path) {
                 }
             }.groupBy { normalized(it.path) }
             for ((path, evidence) in outputs) {
+                // A custom old template can already match the Photos path. Release only its old receipt.
+                if (path in migratedPaths) continue
                 if (path in retainedPaths && Files.exists(path, NOFOLLOW_LINKS)) { deferred++; continue }
                 val safe = evidence.filter { safeExport(path, it.layout) }
                 if (safe.isEmpty() || !noSymlinks(path)) {
@@ -173,6 +238,7 @@ class MediaDeletion(private val root: Path) {
             }
             val complete = conflicts.isEmpty() && deferred == 0
             persist(journalPath, journal.copy(complete = complete))
+            if (complete && migration != null) persist(migrationPath, migration.copy(complete = true))
             return result(if (conflicts.isNotEmpty()) "CONFLICT" else if (deferred > 0) "DEFERRED" else "DELETED")
         } catch (cancelled: java.util.concurrent.CancellationException) {
             throw cancelled

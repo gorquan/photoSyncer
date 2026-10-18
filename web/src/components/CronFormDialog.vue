@@ -7,6 +7,7 @@ import Textarea from 'primevue/textarea'
 import ToggleSwitch from 'primevue/toggleswitch'
 import Checkbox from 'primevue/checkbox'
 import RadioButton from 'primevue/radiobutton'
+import { useConfirm } from 'primevue/useconfirm'
 import Select from 'primevue/select'
 import MultiSelect from 'primevue/multiselect'
 import InputNumber from 'primevue/inputnumber'
@@ -41,6 +42,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const confirm = useConfirm()
 
 const visibleProxy = computed({
   get: () => props.visible,
@@ -48,6 +50,8 @@ const visibleProxy = computed({
 })
 
 const form = toRef(props, 'form')
+const photosLocked = ref(false)
+const photosSwitchKey = ref(0)
 const formErrors = toRef(props, 'formErrors')
 const accountOptions = computed(() => [...props.accountOptions])
 const selectedAccount = computed(() =>
@@ -78,7 +82,8 @@ const isICloud = computed(() => selectedAccount.value?.provider === 'ICLOUD')
 watch(
   isICloud,
   (value) => {
-    if (value && form.value.syncMode === 'TIMELINE') form.value.syncMode = 'CURSOR'
+    if (!props.isEditing && value && form.value.syncMode === 'TIMELINE')
+      form.value.syncMode = 'CURSOR'
   },
   { immediate: true },
 )
@@ -89,7 +94,8 @@ const mirrorSupported = computed(
 watch(
   mirrorSupported,
   (supported) => {
-    if (!supported) form.value.config = { ...form.value.config, syncCloudDeletes: false }
+    if (!props.isEditing && !supported)
+      form.value.config = { ...form.value.config, syncCloudDeletes: false }
   },
   { immediate: true },
 )
@@ -137,7 +143,30 @@ function goBack() {
 }
 
 function selectSyncMode(mode: CrontabSyncMode) {
-  form.value.syncMode = mode
+  if (!props.isEditing) form.value.syncMode = mode
+}
+
+function setSynologyPhotos(enabled: boolean) {
+  if (photosLocked.value || form.value.config.synologyPhotos === enabled) return
+  if (!enabled) {
+    form.value.config = { ...form.value.config, synologyPhotos: false }
+    return
+  }
+  // ToggleSwitch keeps an internal value; remount it while confirmation is pending.
+  photosSwitchKey.value++
+  const pendingForm = form.value
+  confirm.require({
+    header: t('cronform.toggle.synologyPhotosEnableTitle'),
+    message: t('cronform.toggle.synologyPhotosEnableHint'),
+    icon: 'pi pi-exclamation-triangle',
+    rejectLabel: t('common.action.cancel'),
+    acceptLabel: t('common.action.confirm'),
+    rejectProps: { severity: 'secondary', text: true },
+    accept: () => {
+      if (props.visible && form.value === pendingForm)
+        form.value.config = { ...form.value.config, synologyPhotos: true }
+    },
+  })
 }
 
 watch(formErrors, (errors) => {
@@ -180,6 +209,7 @@ watch(
   () => props.visible,
   (val) => {
     if (val) {
+      photosLocked.value = props.isEditing && form.value.config.synologyPhotos === true
       step.value = 'basic'
       slideDir.value = 'slide-left'
       useExpressionPath.value = form.value.config.targetPath.includes('${')
@@ -188,6 +218,7 @@ watch(
     showExpressionHelp.value = false
     showCronHelp.value = false
   },
+  { immediate: true },
 )
 </script>
 
@@ -359,6 +390,9 @@ watch(
 
           <!-- 同步模式 -->
           <div v-else-if="step === 'mode'" key="mode" class="flex flex-col gap-5 pt-2">
+            <Message severity="info" :closable="false">
+              {{ t('cronform.retention.modesFixedHint') }}
+            </Message>
             <fieldset class="space-y-3">
               <legend class="mb-2 text-[13px] font-medium">
                 {{ t('cronform.retention.title') }}
@@ -367,18 +401,20 @@ watch(
                 v-for="mirror in mirrorSupported ? [false, true] : [false]"
                 :key="String(mirror)"
                 :for="mirror ? 'retention-mirror' : 'retention-backup'"
-                class="flex cursor-pointer items-start gap-3 rounded-lg border p-3"
-                :class="
+                class="flex items-start gap-3 rounded-lg border p-3"
+                :class="[
+                  props.isEditing ? 'cursor-not-allowed' : 'cursor-pointer',
                   form.config.syncCloudDeletes === mirror
                     ? 'border-slate-400 bg-slate-50 dark:border-slate-500 dark:bg-slate-800'
-                    : 'border-slate-200 dark:border-slate-700'
-                "
+                    : 'border-slate-200 dark:border-slate-700',
+                ]"
               >
                 <RadioButton
                   v-model="form.config.syncCloudDeletes"
                   :inputId="mirror ? 'retention-mirror' : 'retention-backup'"
                   name="local-retention"
                   :value="mirror"
+                  :disabled="props.isEditing"
                   class="mt-0.5"
                 />
                 <span>
@@ -400,7 +436,13 @@ watch(
                 <label for="synology-photos" class="font-medium">{{
                   t('cronform.toggle.synologyPhotos')
                 }}</label>
-                <ToggleSwitch v-model="form.config.synologyPhotos" inputId="synology-photos" />
+                <ToggleSwitch
+                  :key="photosSwitchKey"
+                  :modelValue="form.config.synologyPhotos"
+                  :disabled="photosLocked"
+                  inputId="synology-photos"
+                  @update:modelValue="setSynologyPhotos"
+                />
               </div>
               <p class="text-[12px] text-slate-500 dark:text-slate-400">
                 {{ t('cronform.toggle.synologyPhotosHint') }}
@@ -408,6 +450,15 @@ watch(
               <p class="text-[12px] text-slate-500 dark:text-slate-400">
                 {{ t('cronform.toggle.synologyPhotosOffHint') }}
               </p>
+              <Message :severity="photosLocked ? 'info' : 'warn'" :closable="false">
+                {{
+                  t(
+                    photosLocked
+                      ? 'cronform.toggle.synologyPhotosLockedHint'
+                      : 'cronform.toggle.synologyPhotosEnableHint',
+                  )
+                }}
+              </Message>
             </div>
 
             <div class="space-y-1">
@@ -423,6 +474,7 @@ watch(
               :label="card.label"
               :desc="card.desc"
               :selected="form.syncMode === card.value"
+              :disabled="props.isEditing"
               @click="selectSyncMode(card.value)"
             >
               <template v-if="card.badge" #badge>

@@ -110,6 +110,7 @@ class CrontabPipeline(
             crontabService.finishCrontabHistoryFetchedAllAssets(crontabHistory, plannedAssetCount)
 
             val systemConfig = systemConfigService.getConfig(NORMAL_SYSTEM_CONFIG)
+            val legacyLayoutGroups = publication.legacyLayoutGroups(crontab)
 
             var total = 0
             var success = 0
@@ -135,7 +136,8 @@ class CrontabPipeline(
                                     CrontabHistoryDetail.init(crontabHistory, it)
                                 })
                                 try {
-                                    publication.process(details, systemConfig)
+                                    publication.process(details, systemConfig,
+                                        com.coooolfan.xiaomialbumsyncer.utils.MediaIdentity.of(asset).groupKey in legacyLayoutGroups)
                                     details.size to details.size
                                 } catch (failure: Exception) {
                                     currentCoroutineContext().ensureActive()

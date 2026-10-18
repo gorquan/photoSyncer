@@ -377,6 +377,8 @@ export default {
       albumsPlaceholder: '选择相册',
     },
     retention: {
+      modesFixedHint:
+        '保存模式和扫描方式在计划创建后不能修改。如需切换，请新建计划；其他设置仍可编辑。',
       title: '本地保存模式',
       backup: '备份模式',
       mirror: '镜像模式',
@@ -395,10 +397,14 @@ export default {
       downloadLivePhotos: '下载苹果 Live Photo 动态部分',
       downloadLivePhotosHint: '随照片下载配对视频，独立于普通视频开关；小米动态照片保留在原图中。',
       synologyPhotos: '适配群晖 Photos',
+      synologyPhotosLockedHint: '此计划已启用群晖 Photos 适配，不能关闭。',
+      synologyPhotosEnableTitle: '开启群晖 Photos 适配',
+      synologyPhotosEnableHint:
+        '开启并保存后不能关闭。下次同步会先生成并校验群晖布局的新文件，再清理本计划对应的旧文件；失败时保留旧文件并重试。手动修改或被其他计划引用的文件会保留并提示。目标路径须为固定根目录，不支持路径模板。',
       synologyPhotosHint:
         '开启：使用固定目标根目录，按厂商、账号和图库隔离导出；Apple Live Photo 图片与视频同名配对，小米动态照片保留原始结构。',
       synologyPhotosOffHint:
-        '关闭：保留云端原件内容，不填充 EXIF，使用普通相册路径或路径模板。切换不会自动搬迁旧文件，建议使用新的空目录；HEIC / HEVC 预览仍取决于 NAS 和客户端能力。',
+        '未开启：保留云端原件内容，不填充 EXIF，使用普通相册路径或路径模板。HEIC / HEVC 预览取决于 NAS 和客户端能力。',
       downloadAudios: '下载录音',
       notify: '发送通知',
       enabled: '定时触发',

@@ -381,6 +381,8 @@ const messages: typeof zh = {
       albumsPlaceholder: 'Select albums',
     },
     retention: {
+      modesFixedHint:
+        'Retention mode and scan strategy are fixed when the plan is created. Create a new plan to change them; other settings remain editable.',
       title: 'Local retention mode',
       backup: 'Backup mode',
       mirror: 'Mirror mode',
@@ -402,10 +404,15 @@ const messages: typeof zh = {
       downloadLivePhotosHint:
         'Include the paired video with photos, independently of ordinary videos. Xiaomi motion stays inside the original image.',
       synologyPhotos: 'Synology Photos compatibility',
+      synologyPhotosLockedHint:
+        'Synology Photos compatibility is enabled for this plan and cannot be turned off.',
+      synologyPhotosEnableTitle: 'Enable Synology Photos compatibility',
+      synologyPhotosEnableHint:
+        'Once enabled and saved, this cannot be turned off. The next sync validates new files in the Photos layout before removing this plan’s corresponding old files. Failures keep old files for retry. Modified or shared files are retained and reported. Use a fixed target root; path templates are not supported.',
       synologyPhotosHint:
         'On: use a fixed export root with provider, account and library folders. Apple Live Photo components share a basename; Xiaomi motion photos retain their original structure.',
       synologyPhotosOffHint:
-        'Off: preserve cloud-original bytes without EXIF filling; use regular album paths or a path template. Switching does not move existing files; choose a new empty folder. HEIC / HEVC previews still depend on the NAS and client.',
+        'When disabled: preserve cloud-original bytes without EXIF filling; use regular album paths or a path template. HEIC / HEVC previews depend on the NAS and client.',
       downloadAudios: 'Download recordings',
       notify: 'Send notifications',
       enabled: 'Scheduled trigger',

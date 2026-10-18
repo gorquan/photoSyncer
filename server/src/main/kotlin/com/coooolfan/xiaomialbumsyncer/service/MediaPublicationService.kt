@@ -11,7 +11,10 @@ import java.nio.file.Path
 
 @Managed
 class MediaPublicationService(private val sql: KSqlClient, private val media: CloudMediaService) {
-    fun process(details: List<CrontabHistoryDetail>, systemConfig: SystemConfig) =
+    fun legacyLayoutGroups(task: Crontab): Set<String> = if (task.config.synologyPhotos)
+        MediaDeletion(mediaStorageRoot()).legacyLayoutGroups(task.id) else emptySet()
+
+    fun process(details: List<CrontabHistoryDetail>, systemConfig: SystemConfig, migrateLayout: Boolean = false) =
         MediaFileLocks.group(MediaIdentity.of(details.first().asset).groupKey) {
             try {
                 requireCurrentPresence(details)
@@ -23,7 +26,7 @@ class MediaPublicationService(private val sql: KSqlClient, private val media: Cl
                 }
                 throw failure
             }
-            processLocked(details, systemConfig)
+            processLocked(details, systemConfig, migrateLayout)
         }
 
     private fun requireCurrentPresence(details: List<CrontabHistoryDetail>) {
@@ -40,7 +43,7 @@ class MediaPublicationService(private val sql: KSqlClient, private val media: Cl
         require(present.all { it._2 }) { "来源版本已变化，取消旧版本发布，下次同步将重试" }
     }
 
-    private fun processLocked(details: List<CrontabHistoryDetail>, systemConfig: SystemConfig) {
+    private fun processLocked(details: List<CrontabHistoryDetail>, systemConfig: SystemConfig, migrateLayout: Boolean) {
         val task = details.first().crontabHistory.crontab
         val config = task.config
         val identity = MediaIdentity.of(details.first().asset)
@@ -87,6 +90,13 @@ class MediaPublicationService(private val sql: KSqlClient, private val media: Cl
                         where(table.id eq detail.id)
                     }
                 })
+            if (migrateLayout && config.synologyPhotos) {
+                val migrated = MediaDeletion(root).retireAlbumLayouts(task.id, identity.groupKey)
+                require(migrated.status == "DELETED") {
+                    "群晖布局迁移未完成，保留未清理文件，下次同步重试：${migrated.conflicts.joinToString("；")}" +
+                        if (migrated.deferredFiles > 0) "（其他计划仍引用 ${migrated.deferredFiles} 个文件）" else ""
+                }
+            }
             sql.executeUpdate(CrontabHistoryDetail::class) {
                 set(table.publicationStatus, "PUBLISHED")
                 where(table.id valueIn details.map { it.id })

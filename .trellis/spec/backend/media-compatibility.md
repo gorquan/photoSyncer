@@ -34,6 +34,14 @@ Publish required Apple resources together, MOV before primary. Persist pending s
 
 Refresh loaded media metadata across every membership of the same logical resource/checksum, including date, extension and motion hints; canonical selection must not keep stale metadata merely because another album owns the lowest row ID. Partial drafts leave omitted scalars intact. Manual metadata actions use only current assets whose history row is the latest published owner of its output path; reactivating an old checksum does not establish ownership before it is exported again.
 
+### Photos enablement migration
+
+`CrontabPipeline` discovers `MediaDeletion.legacyLayoutGroups(taskId)` once per run. For discovered groups, `MediaPublicationService.process(..., migrateLayout=true)` first publishes or reuses complete Photos outputs, then calls `retireAlbumLayouts`. This works for backup as well as mirror. It does not imply migration succeeded merely because the configuration was saved.
+
+Retirement only owns numeric album-suffixed receipts of the same task/group, across old layouts; base Photos receipts and other tasks remain retained. All old roles require intact complete replacement outputs before any old receipt is detached. Use the existing safe-path/hash/ownership checks and a separate `layout-migration` journal. Missing/incomplete/corrupt replacements preserve old media; modified/shared old paths remain retryable and mark the current resource FAILED with a migration diagnostic. Pending journals are rediscovered even after detaching old receipts. Cloud deletion merges pending migration receipts so deletion during a partial migration cannot orphan old exports. Unowned pre-receipt files are never inferred from directory contents or automatically deleted. No extra original pool is introduced.
+
+Test real pipeline off→on migration, multiple old album layouts, complete Apple roles, invalid replacement, modified/shared old files, restart discovery after receipt detachment, idempotence and cloud deletion consuming an unfinished migration. Synthetic tests do not prove production files have been moved.
+
 ## Cloud deletion
 
 `syncCloudDeletes` defaults false for old serialized tasks; new task forms opt in by default. For every supported sync mode, reconcile complete selected live scans plus provider confirmation before ordinary refresh/cursor advancement. Album absence, canceled favorite/hidden membership, auth/network failures, partial pages and Xiaomi storage 50050 never establish deletion. Xiaomi matched strict `deleted_v2` entries and iCloud explicit deleted/missing record lookups provide evidence. Previously unobserved Xiaomi permanent purges remain uncertain and must preserve files; persisted confirmed tombstones can retry after purge. New live observations restore presence, independently of current source version.
