@@ -76,12 +76,17 @@ class CrontabService(private val sql: KSqlClient) {
             select(table)
         }.limit(1).execute().firstOrNull() ?: return CrontabCurrentStats() // 没有正在运行
 
+        return getHistoryCurrentStats(runningCrontabHistory)
+    }
+
+    internal fun getHistoryCurrentStats(runningCrontabHistory: CrontabHistory): CrontabCurrentStats {
         if (!runningCrontabHistory.fetchedAllAssets) {
             return CrontabCurrentStats(Instant.now())
         }
 
-        val assetCount = sql.createQuery(CrontabHistoryDetail::class) {
+        val publishedCount = sql.createQuery(CrontabHistoryDetail::class) {
             where(table.crontabHistoryId eq runningCrontabHistory.id)
+            where(table.publicationStatus eq "PUBLISHED")
             select(count(table))
         }.execute().firstOrNull()
 
@@ -117,11 +122,12 @@ class CrontabService(private val sql: KSqlClient) {
 
         return CrontabCurrentStats(
             Instant.now(),
-            assetCount,
+            runningCrontabHistory.plannedAssetCount,
             downloadCompletedCount,
             sha1VerifiedCount,
             exifFilledCount,
             fsTimeUpdatedCount,
+            publishedCount,
         )
     }
 
@@ -222,8 +228,10 @@ class CrontabService(private val sql: KSqlClient) {
         }
     }
 
-    fun finishCrontabHistoryFetchedAllAssets(crontabHistory: CrontabHistory) {
+    fun finishCrontabHistoryFetchedAllAssets(crontabHistory: CrontabHistory, plannedAssetCount: Long) {
+        require(plannedAssetCount >= 0)
         sql.executeUpdate(CrontabHistory::class) {
+            set(table.plannedAssetCount, plannedAssetCount)
             set(table.fetchedAllAssets, true)
             where(table.id eq crontabHistory.id)
         }

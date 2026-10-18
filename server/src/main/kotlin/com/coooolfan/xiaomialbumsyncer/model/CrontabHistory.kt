@@ -35,6 +35,9 @@ interface CrontabHistory {
 
     val fetchedAllAssets: Boolean
 
+    /** Eligible publication resources at enumeration completion; null for older runs. */
+    val plannedAssetCount: Long?
+
     /** Execution ended, including handled failures; details.publicationStatus is export evidence. */
     @Formula(dependencies = ["endTime"])
     val isCompleted: Boolean

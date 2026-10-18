@@ -25,6 +25,10 @@ export type CrontabDto = {
             readonly deletionReport?: CloudDeletionReport | undefined;
             readonly fetchedAllAssets: boolean;
             /**
+             * Eligible publication resources at enumeration completion; null for older runs.
+             */
+            readonly plannedAssetCount?: number | undefined;
+            /**
              * Execution ended, including handled failures; details.publicationStatus is export evidence.
              */
             readonly isCompleted: boolean;

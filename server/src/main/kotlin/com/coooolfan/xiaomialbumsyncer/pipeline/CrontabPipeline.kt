@@ -99,7 +99,8 @@ class CrontabPipeline(
             }
 
             // 标记元数据枚举完成。
-            crontabService.finishCrontabHistoryFetchedAllAssets(crontabHistory)
+            val plannedAssetCount = assetService.countAssetsForPublication(crontab)
+            crontabService.finishCrontabHistoryFetchedAllAssets(crontabHistory, plannedAssetCount)
 
             val systemConfig = systemConfigService.getConfig(NORMAL_SYSTEM_CONFIG)
 

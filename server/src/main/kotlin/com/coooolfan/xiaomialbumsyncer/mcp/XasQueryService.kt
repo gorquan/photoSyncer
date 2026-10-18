@@ -76,6 +76,7 @@ class XasQueryService(
                 sha1VerifiedCount = stats.sha1VerifiedCount,
                 exifFilledCount = stats.exifFilledCount,
                 fsTimeUpdatedCount = stats.fsTimeUpdatedCount,
+                publishedCount = stats.publishedCount,
             ),
         )
     }

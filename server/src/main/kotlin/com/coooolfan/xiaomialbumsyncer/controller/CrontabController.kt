@@ -283,16 +283,6 @@ class CrontabController(private val service: CrontabService) {
 }
 
 /**
- * 定时任务当前统计信息数据类
- *
- * @property ts 统计时间戳
- * @property assetCount 资源总数
- * @property downloadCompletedCount 下载完成数
- * @property sha1VerifiedCount SHA1验证完成数
- * @property exifFilledCount EXIF填充完成数
- * @property fsTimeUpdatedCount 文件系统时间更新完成数
- */
-/**
  * 折叠后的定时任务执行历史分组
  *
  * @property historyId 组内最新一次执行的历史 ID
@@ -311,11 +301,23 @@ data class CrontabHistoryGroup(
     val deletionReport: com.coooolfan.xiaomialbumsyncer.model.CloudDeletionReport?,
 )
 
+/**
+ * 定时任务当前统计信息数据类
+ *
+ * @property ts 统计时间戳
+ * @property assetCount 枚举结束时固定的本次资源总数，null 表示尚未确定
+ * @property downloadCompletedCount 下载完成数
+ * @property sha1VerifiedCount SHA1验证完成数
+ * @property exifFilledCount EXIF填充完成数
+ * @property fsTimeUpdatedCount 文件系统时间更新完成数
+ * @property publishedCount 最终发布完成的资源数
+ */
 data class CrontabCurrentStats(
     val ts: Instant? = null,
     val assetCount: Long? = null,
     val downloadCompletedCount: Long? = null,
     val sha1VerifiedCount: Long? = null,
     val exifFilledCount: Long? = null,
-    val fsTimeUpdatedCount: Long? = null
+    val fsTimeUpdatedCount: Long? = null,
+    val publishedCount: Long? = null,
 )

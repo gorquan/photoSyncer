@@ -76,6 +76,7 @@ data class CrontabCurrentStatsOutput(
     val sha1VerifiedCount: Long?,
     val exifFilledCount: Long?,
     val fsTimeUpdatedCount: Long?,
+    val publishedCount: Long?,
 )
 
 // ---------- crontab_history ----------
