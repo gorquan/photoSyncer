@@ -29,6 +29,29 @@ class MediaDeletionServiceTest {
     private val directory get() = temporary.toRealPath()
     private val jpeg by lazy { ByteArrayOutputStream().also { ImageIO.write(BufferedImage(2, 3, BufferedImage.TYPE_INT_RGB), "jpg", it) }.toByteArray() }
 
+    @Test fun photosSwitchControlsByteChangingMetadataProcessing() = withStore { _, _, detail ->
+        val marker = directory.resolve("exif-called")
+        val tool = directory.resolve("exiftool")
+        Files.writeString(tool, "#!/bin/sh\ntouch '$marker'\nfor arg do target=\"${'$'}arg\"; done\nprintf x >> \"${'$'}target\"\n")
+        assertTrue(tool.toFile().setExecutable(true))
+        for (photos in listOf(false, true)) {
+            val configured = CrontabHistoryDetail(detail) {
+                crontabHistory = CrontabHistory(detail.crontabHistory) {
+                    crontab = Crontab(detail.crontabHistory.crontab) {
+                        config = detail.crontabHistory.crontab.config.copy(synologyPhotos = photos,
+                            rewriteExifTime = true, rewriteExifTimeZone = "UTC", rewriteFileSystemTime = true)
+                    }
+                }
+            }
+            val path = Files.write(directory.resolve("photo-$photos.jpg"), jpeg)
+            transformPublicationMedia(configured, path, SystemConfig { exifToolPath = tool.toString() })
+            assertEquals(photos, Files.exists(marker))
+            if (photos) assertArrayEquals(jpeg + byteArrayOf('x'.code.toByte()), Files.readAllBytes(path))
+            else assertArrayEquals(jpeg, Files.readAllBytes(path))
+            assertEquals(Instant.EPOCH, Files.getLastModifiedTime(path).toInstant())
+        }
+    }
+
     @Test fun databaseRestorationAndDisabledTaskPreservePublishedBytes() = withStore { sql, media, detail ->
         val root = directory.resolve("media")
         val identity = MediaIdentity.of(detail.asset)
@@ -44,7 +67,7 @@ class MediaDeletionServiceTest {
         assertTrue(cleanup.cleanup(disabled, listOf(group), root).isEmpty())
         assertTrue(Files.exists(Path.of(receipt.outputs.single().path)))
         val deleted = cleanup.cleanup(task, listOf(group), root).single()
-        assertEquals("DELETED", deleted.status); assertEquals(1, deleted.exportsDeleted); assertEquals(1, deleted.originalsDeleted)
+        assertEquals("DELETED", deleted.status); assertEquals(1, deleted.exportsDeleted); assertEquals(0, deleted.originalsDeleted)
         assertFalse(Files.exists(Path.of(receipt.outputs.single().path)))
         // Re-import is authoritative restoration; the stale deletion result cannot remove new bytes.
         media.saveAssets(listOf(detail.asset))

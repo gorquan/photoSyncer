@@ -11,7 +11,7 @@ import java.nio.file.AtomicMoveNotSupportedException
 import java.security.MessageDigest
 import java.util.UUID
 
-/** Receipt hashes describe exported bytes; archive hashes always describe unchanged cloud originals. */
+/** Source and output hashes are evidence; only target media is retained after publication. */
 data class PublishedResource(
     val resource: String, val source: String, val path: String, val archive: String,
     val originalSha256: String, val outputSha256: String, val size: Long,
@@ -21,7 +21,6 @@ data class PublicationReceipt(
     val group: String, val layout: String, val fingerprint: String, val complete: Boolean,
     val outputs: List<PublishedResource>, val ownedPaths: List<String>, val ownedHashes: Map<String, String> = emptyMap(), val version: Int = MediaPublisher.VERSION,
 )
-internal data class ArchivedOriginal(val source: String, val sha256: String, val size: Long)
 
 /** Filesystem transaction journal. Callers serialize publication for a task/group. */
 class MediaPublisher(private val root: Path) {
@@ -56,14 +55,14 @@ class MediaPublisher(private val root: Path) {
         val absoluteRoot = canonical(root)
         val config = details.first().crontabHistory.crontab.config
         if (!config.targetPath.contains("${'$'}{")) require(disjoint(absoluteRoot, canonical(Path.of(config.targetPath.trim())))) {
-            "原件存储目录必须位于照片索引目标根目录之外"
+            "发布状态和临时目录必须位于照片索引目标根目录之外"
         }
         if (details.any { MediaIdentity.of(it.asset).liveCompanion }) require(details.any {
             MediaIdentity.of(it.asset).role == "resOriginal" && it.asset.type == AssetType.IMAGE
         }) { "实况照片缺少主图片，资源组尚未发布" }
         details.forEach {
             val output = canonical(Path.of(it.filePath))
-            require(disjoint(absoluteRoot, output.parent)) { "原件存储目录必须位于照片索引目标目录之外" }
+            require(disjoint(absoluteRoot, output.parent)) { "发布状态和临时目录必须位于照片索引目标目录之外" }
         }
         Files.createDirectories(absoluteRoot)
         val receiptPath = absoluteRoot.resolve("receipts/${hash(group + layout)}.json")
@@ -71,13 +70,15 @@ class MediaPublisher(private val root: Path) {
         // Existence alone is never sufficient. Check final bytes on every run, even for completed history.
         if (config.skipExistingFile && previous?.complete == true && previous.fingerprint == fingerprint &&
             previous.outputs.size == details.size && previous.outputs.all {
-                matches(Path.of(it.path), it.outputSha256) && matches(Path.of(it.archive), it.originalSha256) &&
+                matches(Path.of(it.path), it.outputSha256) &&
                     (!config.rewriteFileSystemTime || Files.getLastModifiedTime(Path.of(it.path)).toInstant() ==
                         details.first { detail -> detail.filePath == it.path }.asset.dateTaken)
             }) {
             beforeCommit()
-            previous.outputs.forEach { output -> evidence(details.first { it.filePath == output.path }, output) }
-            return previous
+            val reused = previous.copy(outputs = previous.outputs.map { it.copy(archive = "") })
+            if (reused != previous) write(receiptPath, reused)
+            reused.outputs.forEach { output -> evidence(details.first { it.filePath == output.path }, output) }
+            return reused
         }
         val work = absoluteRoot.resolve("work/${UUID.randomUUID()}")
         Files.createDirectories(work)
@@ -86,26 +87,13 @@ class MediaPublisher(private val root: Path) {
                 val asset = detail.asset
                 val identity = MediaIdentity.of(asset)
                 val source = mapper.writeValueAsString(listOf(identity.resourceKey, asset.checksum, asset.size, asset.mimeType))
-                val archive = absoluteRoot.resolve("originals/${hash(source)}.original")
-                val archiveReceipt = archive.resolveSibling("${archive.fileName}.json")
-                var known = read<ArchivedOriginal>(archiveReceipt)?.takeIf { it.source == source && matches(archive, it.sha256) }
-                if (known == null) {
-                    val temp = work.resolve("download-$index")
-                    require(download(asset, temp)) { "云端原件暂不可用，资源组尚未发布" }
-                    val (digest, _, _) = validateOriginal(detail, temp, null, validationFailure)
-                    Files.createDirectories(archive.parent)
-                    atomicMove(temp, archive)
-                    known = ArchivedOriginal(source, digest.sha256, digest.size)
-                    write(archiveReceipt, known)
-                }
-                // A changed verification setting rechecks archived bytes, without another transfer.
-                val (digest, status, motion) = validateOriginal(detail, archive, known.sha256, validationFailure)
                 val copy = work.resolve("export-$index.${Path.of(detail.filePath).fileName.toString().substringAfterLast('.', "bin")}")
-                Files.copy(archive, copy, REPLACE_EXISTING)
+                require(download(asset, copy)) { "云端原件暂不可用，资源组尚未发布" }
+                val (digest, status, motion) = validateOriginal(detail, copy, validationFailure)
                 transform(detail, copy)
                 validateOriginalContainer(copy, asset.mimeType)
                 inspectMotionPhoto(copy, asset.motionPhotoHint).requireSafeOriginal()
-                val output = PublishedResource(identity.resourceKey, source, detail.filePath, archive.toString(), digest.sha256,
+                val output = PublishedResource(identity.resourceKey, source, detail.filePath, "", digest.sha256,
                     fileHash(copy), digest.size, status, motion.diagnostic, motion.status)
                 evidence(detail, output)
                 copy to output
@@ -157,11 +145,10 @@ class MediaPublisher(private val root: Path) {
     }
 
     private fun validateOriginal(
-        detail: CrontabHistoryDetail, path: Path, expectedHash: String?,
+        detail: CrontabHistoryDetail, path: Path,
         failed: (CrontabHistoryDetail, Exception) -> Unit,
     ): Triple<OriginalDigests, VerificationStatus, MotionPhotoInspection> = try {
         val digest = digestOriginal(path, detail.asset.size)
-        require(expectedHash == null || digest.sha256 == expectedHash) { "保留原件的 SHA-256 不匹配" }
         validateOriginalContainer(path, detail.asset.mimeType)
         val motion = inspectMotionPhoto(path, detail.asset.motionPhotoHint).requireSafeOriginal()
         Triple(digest, verifySource(detail.asset, detail.crontabHistory.crontab.config, digest), motion)

@@ -10,7 +10,7 @@
 - 全量、时间线增量、位点增量模式；缺失或损坏的托管文件可在后续同步修复。
 - 群晖 Photos 模式按厂商、账号、图库隔离目录，同一资源出现在多个所选相册时只导出一份。
 - Apple Live Photo 保留图片和配套视频的同名配对及元数据；小米动态照片保留原始单文件结构。
-- 原件库与展示文件分开保存，支持来源校验、本地 SHA-256 校验、照片和视频时间信息补齐。
+- 每个选中的媒体资源只在任务目标目录长期保存一份；下载和适配使用临时文件，支持来源校验、本地 SHA-256 校验及时间信息补齐。
 - 可选择同步云端删除，或保留本地文件作备份。
 - Web 管理界面、[路径表达式](docs/expression-target-path.md)、[HTTPS](docs/ssl-suppot.md) 和 [Passkey](docs/passkey-login.md)。
 
@@ -41,11 +41,11 @@ Compose 使用本地构建的 `photosyncer:local` 镜像，包含 JRE 25 和 Exi
 
 | 变量 | 用途 | 默认值 |
 | --- | --- | --- |
-| `PHOTO_SYNCER_STATE_DIR` | 宿主机数据库与原件目录 | `../db`（相对 compose 文件） |
+| `PHOTO_SYNCER_STATE_DIR` | 宿主机数据库与发布记录目录 | `../db`（相对 compose 文件） |
 | `PHOTO_SYNCER_EXPORT_DIR` | 宿主机展示文件目录 | `../download`（相对 compose 文件） |
 | `PHOTO_SYNCER_PORT` | 对外服务端口 | `8232` |
 
-容器内数据库为 `/app/db/xiaomialbumsyncer.db`，原件为 `/app/db/media`，展示根目录为 `/photos`。数据库文件名保留历史名称，不影响功能。确保挂载目录可写。原件库和展示根目录必须互不包含，并保持足够空间容纳两份媒体及处理中的临时文件。
+容器内数据库为 `/app/db/xiaomialbumsyncer.db`，发布记录和处理临时目录为 `/app/db/media`，媒体目标根目录为 `/photos`。数据库文件名保留历史名称，不影响功能。确保挂载目录可写，状态目录和媒体目标目录互不包含。同步完成后只保留目标文件，不另建原件库；处理期间需要容纳当前并发资源的临时文件。
 
 ### 群晖 Container Manager
 
@@ -65,7 +65,7 @@ Compose 使用本地构建的 `photosyncer:local` 镜像，包含 JRE 25 和 Exi
 APP_DB_PATH=./db/xiaomialbumsyncer.db java --enable-native-access=ALL-UNNAMED -jar /实际路径/app.jar
 ```
 
-默认监听 `8080`。在应用设置中填写本机 ExifTool 的可执行路径。`PHOTO_SYNCER_MEDIA_ROOT` 可指定原件根目录，默认在数据库目录下的 `media`；它必须持久化并与展示目录分开。
+默认监听 `8080`。在应用设置中填写本机 ExifTool 的可执行路径。`PHOTO_SYNCER_MEDIA_ROOT` 可指定发布记录和处理临时目录，默认在数据库目录下的 `media`；发布记录需要持久化，此目录须与媒体目标目录分开。
 
 ## 绑定账号和创建任务
 
@@ -77,6 +77,8 @@ APP_DB_PATH=./db/xiaomialbumsyncer.db java --enable-native-access=ALL-UNNAMED -j
 4. 创建任务，选择账号、相册、同步模式、时间及媒体类型。Cron 示例 `0 0 23 * * ?` 表示每天 23 点，按服务运行时区执行。
 5. 在“保存与同步”中选择“备份模式”或“镜像模式”，并独立设置“适配群晖 Photos”。使用群晖时打开适配开关，目标填 `/photos`。图片和实况配套视频分别控制；需要保留 Apple 动态部分时开启配套视频。
 6. 可先手动执行并查看任务历史；确认结果后启用定时执行。
+
+关闭群晖 Photos 适配时，自动同步保留云端原件的文件内容，不执行 EXIF 填充。开启后按任务设置补齐缺失时间、配对命名，最终仍只保留目标文件。文件系统时间设置不改变文件内容。
 
 群晖模式的目录示例：
 
@@ -94,8 +96,8 @@ APP_DB_PATH=./db/xiaomialbumsyncer.db java --enable-native-access=ALL-UNNAMED -j
 
 | 设置 | 云端确认删除后的行为 |
 | --- | --- |
-| 备份模式 | 保留已下载的本地文件和原件，适合作长期备份 |
-| 镜像模式 | 清理对应托管展示文件及没有其他任务引用的历史原件 |
+| 备份模式 | 保留目标目录中已下载的文件，适合作长期备份 |
+| 镜像模式 | 清理对应托管文件；兼容清理旧版本遗留且没有其他任务引用的原件副本 |
 
 **新建任务默认镜像模式；升级前未设置删除同步的旧任务保持备份模式。** 手机删除需先同步到云端，本地下一次成功检查后才清理。Apple 实况图片及配套视频作为一组处理。
 
@@ -105,7 +107,7 @@ APP_DB_PATH=./db/xiaomialbumsyncer.db java --enable-native-access=ALL-UNNAMED -j
 
 ## 升级与备份
 
-升级前停止容器，一起备份 `db`（含原件库）、展示目录及部署配置，再替换镜像。仅备份 SQLite 无法恢复原件与发布凭据。不要在运行时只复制 SQLite 主文件而遗漏 WAL；可停止服务后复制，或使用 SQLite backup API。
+升级前停止容器，一起备份 `db`（含发布记录）、媒体目标目录及部署配置，再替换镜像。仅备份 SQLite 无法恢复媒体与发布凭据。不要在运行时只复制 SQLite 主文件而遗漏 WAL；可停止服务后复制，或使用 SQLite backup API。
 
 旧版 v2 数据导入入口在设置页。迁移前备份旧数据库，将其作为 `/app/old.db` 挂载给已完成密码初始化、尚无相册和下载记录的新实例，再执行“从 V2 导入数据”。迁移后检查任务目标路径和账号状态。
 

@@ -397,7 +397,7 @@ export default {
       synologyPhotosHint:
         '开启：使用固定目标根目录，按厂商、账号和图库隔离导出；Apple Live Photo 图片与视频同名配对，小米动态照片保留原始结构。',
       synologyPhotosOffHint:
-        '关闭：使用普通相册路径或路径模板。切换不会自动搬迁旧文件，建议使用新的空目录；HEIC / HEVC 预览仍取决于 NAS 和客户端能力。',
+        '关闭：保留云端原件内容，不填充 EXIF，使用普通相册路径或路径模板。切换不会自动搬迁旧文件，建议使用新的空目录；HEIC / HEVC 预览仍取决于 NAS 和客户端能力。',
       downloadAudios: '下载录音',
       notify: '发送通知',
       enabled: '定时触发',
@@ -421,7 +421,8 @@ export default {
       syncModeCursorHint:
         '从上次同步位点读取变化记录，支持断点续拉；首次同步或位点失效时自动建立全量基线。',
       rewriteExifTime: '填充 EXIF 时间',
-      rewriteExifTimeHint: '将云端记录的资产时间写入 EXIF，仅在文件缺少 EXIF 时间时生效。',
+      rewriteExifTimeHint:
+        '开启群晖适配后，将云端记录的资产时间写入 EXIF，仅在文件缺少 EXIF 时间时生效。',
       skipExistingFile: '跳过已存在文件',
       skipExistingFileHint:
         '若资产的目标文件路径已存在，将跳过下载。仅适用于保存路径中已有存量数据。',
