@@ -37,10 +37,11 @@ class MediaPublisher(private val root: Path) {
         evidence: (CrontabHistoryDetail, PublishedResource) -> Unit = { _, _ -> },
         validationFailure: (CrontabHistoryDetail, Exception) -> Unit = { _, _ -> },
         beforeCommit: () -> Unit = {},
+        localReceipts: List<PublicationReceipt> = emptyList(),
     ): PublicationReceipt {
         require(details.isNotEmpty())
         return MediaFileLocks.group(MediaIdentity.of(details.first().asset).groupKey) {
-            publishLocked(group, layout, fingerprint, details, download, transform, evidence, validationFailure, beforeCommit)
+            publishLocked(group, layout, fingerprint, details, download, transform, evidence, validationFailure, beforeCommit, localReceipts)
         }
     }
 
@@ -50,6 +51,7 @@ class MediaPublisher(private val root: Path) {
         evidence: (CrontabHistoryDetail, PublishedResource) -> Unit,
         validationFailure: (CrontabHistoryDetail, Exception) -> Unit,
         beforeCommit: () -> Unit,
+        localReceipts: List<PublicationReceipt>,
     ): PublicationReceipt {
         require(details.isNotEmpty())
         val absoluteRoot = canonical(root)
@@ -88,8 +90,11 @@ class MediaPublisher(private val root: Path) {
                 val identity = MediaIdentity.of(asset)
                 val source = mapper.writeValueAsString(listOf(identity.resourceKey, asset.checksum, asset.size, asset.mimeType))
                 val copy = work.resolve("export-$index.${Path.of(detail.filePath).fileName.toString().substringAfterLast('.', "bin")}")
-                require(download(asset, copy)) { "云端原件暂不可用，资源组尚未发布" }
-                val (digest, status, motion) = validateOriginal(detail, copy, validationFailure)
+                val local = prepareLocalOriginal(detail, source, copy, localReceipts)
+                val (digest, status, motion) = local ?: run {
+                    require(download(asset, copy)) { "云端原件暂不可用，资源组尚未发布" }
+                    validateOriginal(detail, copy, validationFailure)
+                }
                 transform(detail, copy)
                 validateOriginalContainer(copy, asset.mimeType)
                 inspectMotionPhoto(copy, asset.motionPhotoHint).requireSafeOriginal()
@@ -142,6 +147,44 @@ class MediaPublisher(private val root: Path) {
         } finally {
             Files.walk(work).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists) }
         }
+    }
+
+    /** A migration may reuse only unchanged cloud bytes, never an already transformed export. */
+    private fun prepareLocalOriginal(
+        detail: CrontabHistoryDetail, source: String, copy: Path, receipts: List<PublicationReceipt>,
+    ): Triple<OriginalDigests, VerificationStatus, MotionPhotoInspection>? {
+        val task = detail.crontabHistory.crontab
+        if (!task.config.synologyPhotos) return null
+        val identity = MediaIdentity.of(detail.asset)
+        val prefix = "${task.id}/${identity.groupKey}/"
+        for (receipt in receipts) {
+            if (!receipt.complete || receipt.version != VERSION || !receipt.group.startsWith(prefix) ||
+                receipt.group.removePrefix(prefix).toLongOrNull() == null) continue
+            for (output in receipt.outputs) {
+                if (output.resource != identity.resourceKey || output.source != source || output.size != detail.asset.size ||
+                    !output.originalSha256.matches(Regex("[a-f0-9]{64}")) || output.originalSha256 != output.outputSha256) continue
+                try {
+                    val path = Path.of(output.path).toAbsolutePath().normalize()
+                    if (!safeMediaExport(path, receipt.layout, root.toAbsolutePath().normalize()) ||
+                        !noSymlinks(path) || !Files.isRegularFile(path, NOFOLLOW_LINKS)) continue
+                    Files.copy(path, copy, REPLACE_EXISTING)
+                    Files.setLastModifiedTime(copy, Files.getLastModifiedTime(path))
+                    // Validate the copy: a source can disappear or change since discovery.
+                    val validated = validateOriginal(detail, copy) { _, _ -> }
+                    require(validated.first.sha256 == output.originalSha256) { "本地原件 SHA-256 不匹配" }
+                    return validated
+                } catch (cancelled: java.util.concurrent.CancellationException) {
+                    throw cancelled
+                } catch (interrupted: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw interrupted
+                } catch (_: Exception) {
+                    // Try another album copy, then fetch only this resource if none is valid.
+                }
+                Files.deleteIfExists(copy)
+            }
+        }
+        return null
     }
 
     private fun validateOriginal(

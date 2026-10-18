@@ -44,6 +44,137 @@ class MediaPublisherTest {
         if (Files.exists(work)) assertEquals(0L, Files.list(work).use { it.count() })
     }
 
+    private fun legacy(details: List<CrontabHistoryDetail>, folder: String = "old", transform: (CrontabHistoryDetail, Path) -> Unit = { _, _ -> }): PublicationReceipt {
+        val inputs = details.map { input -> CrontabHistoryDetail(input) {
+            crontabHistory = CrontabHistory(input.crontabHistory) {
+                crontab = Crontab(input.crontabHistory.crontab) {
+                    config = input.crontabHistory.crontab.config.copy(synologyPhotos = false, targetPath = directory.resolve(folder).toString())
+                }
+            }
+            filePath = directory.resolve("$folder/${Path.of(input.filePath).fileName}").toString()
+        } }
+        return MediaPublisher(directory.resolve("archive")).publish("1/${MediaIdentity.of(inputs.first().asset).groupKey}/1",
+            directory.resolve(folder).toString(), "legacy-$folder", inputs,
+            { asset, path -> Files.write(path, if (asset.type == AssetType.VIDEO) mov else jpeg); true }, transform)
+    }
+
+    private fun migrate(details: List<CrontabHistoryDetail>, receipts: List<PublicationReceipt>,
+                        download: (Asset, Path) -> Boolean = { _, _ -> fail("valid local original must not download") },
+                        transform: (CrontabHistoryDetail, Path) -> Unit = { _, _ -> }): PublicationReceipt =
+        MediaPublisher(directory.resolve("archive")).publish("1/${MediaIdentity.of(details.first().asset).groupKey}",
+            directory.resolve("out").toString(), "photos-${details.map { it.asset.checksum }}", details, download, transform,
+            validationFailure = { _, _ -> fail("rejected local candidates must not clear database evidence") }, localReceipts = receipts)
+
+    @Test fun photosMigrationReusesApplePairEvenWithSkipExistingDisabled() {
+        val inputs = listOf(detail(), detail("resOriginalVidCompl")).map { input -> CrontabHistoryDetail(input) {
+            crontabHistory = CrontabHistory(input.crontabHistory) {
+                crontab = Crontab(input.crontabHistory.crontab) { config = input.crontabHistory.crontab.config.copy(skipExistingFile = false) }
+            }
+        } }
+        val old = legacy(inputs)
+        val transformed = mutableListOf<Long>()
+        val current = migrate(inputs, listOf(old), transform = { item, _ -> transformed += item.id })
+        assertEquals(inputs.map { it.id }, transformed)
+        assertTrue(current.outputs.all { it.verification == VerificationStatus.TRANSPORT_VERIFIED })
+        assertEquals(old.outputs.map { it.originalSha256 }, current.outputs.map { it.originalSha256 })
+        assertTrue(old.outputs.all { Files.exists(Path.of(it.path)) }, "publisher must leave old media until retirement")
+        assertEquals("DELETED", MediaDeletion(directory.resolve("archive")).retireAlbumLayouts(1, MediaIdentity.of(inputs.first().asset).groupKey).status)
+        assertTrue(old.outputs.none { Files.exists(Path.of(it.path)) })
+        assertNoRetainedMedia()
+    }
+
+    @Test fun photosMigrationReusesXiaomiOriginalWithSourceSha1Verification() {
+        val base = detail()
+        val input = CrontabHistoryDetail(base) {
+            asset = Asset(base.asset) {
+                album = Album(base.asset.album) { account = ProviderAccount(base.asset.album.account) { provider = CloudProvider.XIAOMI } }
+                remoteKey = "xiaomi-record"
+                checksum = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-1").digest(jpeg))
+            }
+        }
+        val current = migrate(listOf(input), listOf(legacy(listOf(input))))
+        assertEquals(VerificationStatus.SOURCE_VERIFIED, current.outputs.single().verification)
+        assertNoRetainedMedia()
+    }
+
+    @Test fun photosMigrationDownloadsOnlyMissingOrCorruptComponent() {
+        val inputs = listOf(detail(checked = false), detail("resOriginalVidCompl", checked = false))
+        val old = legacy(inputs)
+        Files.delete(Path.of(old.outputs.last().path))
+        val downloaded = mutableListOf<AssetType>()
+        migrate(inputs, listOf(old), download = { asset, path -> downloaded += asset.type; Files.write(path, mov); true })
+        assertEquals(listOf(AssetType.VIDEO), downloaded)
+        // Keep the same size and valid container so rejection requires the recorded SHA-256.
+        Files.write(Path.of(old.outputs.first().path), jpeg.copyOf().also { it[14] = (it[14].toInt() xor 1).toByte() })
+        Files.write(Path.of(old.outputs.last().path), mov)
+        Files.delete(Path.of(inputs.first().filePath))
+        downloaded.clear()
+        migrate(inputs, listOf(old), download = { asset, path -> downloaded += asset.type; Files.write(path, jpeg); true })
+        assertEquals(listOf(AssetType.IMAGE), downloaded)
+        assertNoRetainedMedia()
+    }
+
+    @Test fun photosMigrationTriesAnotherAlbumCopyBeforeDownloading() {
+        val input = listOf(detail())
+        val first = legacy(input, "old-one")
+        val second = legacy(input, "old-two")
+        Files.delete(Path.of(first.outputs.single().path))
+        assertTrue(migrate(input, listOf(first, second)).complete)
+        assertNoRetainedMedia()
+    }
+
+    @Test fun photosMigrationRejectsChangedVersionAndTransformedBytes() {
+        val old = legacy(listOf(detail()))
+        var downloads = 0
+        val download: (Asset, Path) -> Boolean = { _, path -> downloads++; Files.write(path, jpeg); true }
+        migrate(listOf(detail(version = "v2")), listOf(old), download)
+        assertEquals(1, downloads)
+        val transformed = legacy(listOf(detail()), "old-transformed", transform = { _, path ->
+            Files.write(path, jpeg.take(2).toByteArray() + byteArrayOf(0xff.toByte(), 0xef.toByte(), 0, 3, 7) + jpeg.drop(2))
+        })
+        migrate(listOf(detail()), listOf(transformed), download)
+        assertEquals(2, downloads)
+        assertNoRetainedMedia()
+    }
+
+    @Test fun photosMigrationRejectsUntrustedOwnershipAndPaths() {
+        val inputs = listOf(detail())
+        val old = legacy(inputs)
+        var downloads = 0
+        val download: (Asset, Path) -> Boolean = { _, path -> downloads++; Files.write(path, jpeg); true }
+        val wrongOwner = old.copy(group = "2/${MediaIdentity.of(inputs.first().asset).groupKey}/1")
+        val escaped = old.copy(layout = directory.resolve("elsewhere").toString())
+        val link = directory.resolve("old/link.jpg")
+        Files.createSymbolicLink(link, Path.of(old.outputs.single().path))
+        val symlink = old.copy(outputs = old.outputs.map { it.copy(path = link.toString()) })
+        for ((index, candidate) in listOf(wrongOwner, escaped, symlink).withIndex()) {
+            MediaPublisher(directory.resolve("archive")).publish("1/${MediaIdentity.of(inputs.first().asset).groupKey}",
+                directory.resolve("out").toString(), "paths-$index", inputs, download, { _, _ -> }, localReceipts = listOf(candidate))
+        }
+        assertEquals(3, downloads)
+        assertArrayEquals(jpeg, Files.readAllBytes(Path.of(old.outputs.single().path)))
+        assertNoRetainedMedia()
+    }
+
+    @Test fun failedLocalMigrationPreservesOldPairAndCleansTemporaryCopies() {
+        val inputs = listOf(detail(), detail("resOriginalVidCompl"))
+        val old = legacy(inputs)
+        assertThrows(IllegalStateException::class.java) {
+            migrate(inputs, listOf(old), transform = { item, _ ->
+                if (item.asset.type == AssetType.VIDEO) error("transform failed")
+            })
+        }
+        assertArrayEquals(jpeg, Files.readAllBytes(Path.of(old.outputs.first().path)))
+        assertArrayEquals(mov, Files.readAllBytes(Path.of(old.outputs.last().path)))
+        assertTrue(inputs.none { Files.exists(Path.of(it.filePath)) })
+        assertNoRetainedMedia()
+        Files.delete(Path.of(old.outputs.last().path))
+        assertThrows(IllegalArgumentException::class.java) { migrate(inputs, listOf(old), download = { _, _ -> false }) }
+        assertArrayEquals(jpeg, Files.readAllBytes(Path.of(old.outputs.first().path)))
+        assertTrue(inputs.none { Files.exists(Path.of(it.filePath)) })
+        assertNoRetainedMedia()
+    }
+
     @Test fun completeGroupKeepsOnlyTargetsAndRedownloadsMissingOrCorruptOutput() {
         val pair = listOf(detail(), detail("resOriginalVidCompl"))
         var downloads = 0

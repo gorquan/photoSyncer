@@ -400,7 +400,7 @@ export default {
       synologyPhotosLockedHint: '此计划已启用群晖 Photos 适配，不能关闭。',
       synologyPhotosEnableTitle: '开启群晖 Photos 适配',
       synologyPhotosEnableHint:
-        '开启并保存后不能关闭。下次同步会先生成并校验群晖布局的新文件，再清理本计划对应的旧文件；失败时保留旧文件并重试。手动修改或被其他计划引用的文件会保留并提示。目标路径须为固定根目录，不支持路径模板。',
+        '开启并保存后不能关闭。下次同步优先使用已校验的本地原件生成群晖布局，仅在缺失、损坏或版本不符时补下载。新文件校验通过后再清理本计划对应的旧文件；失败时保留旧文件并重试。手动修改或被其他计划引用的文件会保留并提示。目标路径须为固定根目录，不支持路径模板。',
       synologyPhotosHint:
         '开启：使用固定目标根目录，按厂商、账号和图库隔离导出；Apple Live Photo 图片与视频同名配对，小米动态照片保留原始结构。',
       synologyPhotosOffHint:

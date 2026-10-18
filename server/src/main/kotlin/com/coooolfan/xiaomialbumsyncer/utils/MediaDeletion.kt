@@ -40,9 +40,9 @@ class MediaDeletion(private val root: Path) {
     private val absoluteRoot = root.toAbsolutePath().normalize()
 
     /** Discover migration work once per run, rather than scanning receipts for every published group. */
-    fun legacyLayoutGroups(taskId: Long): Set<String> = MediaFileLocks.ownership {
+    fun legacyLayouts(taskId: Long): Map<String, List<PublicationReceipt>> = MediaFileLocks.ownership {
         val directory = absoluteRoot.resolve("receipts")
-        val groups = mutableSetOf<String>()
+        val groups = mutableMapOf<String, MutableList<PublicationReceipt>>()
         if (Files.exists(directory, NOFOLLOW_LINKS)) {
             require(noSymlinks(directory)) { "发布凭证目录包含符号链接，无法迁移旧文件" }
             Files.newDirectoryStream(directory, "*.json").use { paths -> paths.forEach { path ->
@@ -51,7 +51,7 @@ class MediaDeletion(private val root: Path) {
                 require(receipt.version == MediaPublisher.VERSION && path.fileName.toString() == "${hash(receipt.group + receipt.layout)}.json")
                 val prefix = "$taskId/"
                 if (receipt.group.startsWith(prefix) && receipt.group.substringAfterLast('/').toLongOrNull() != null)
-                    groups += receipt.group.removePrefix(prefix).substringBeforeLast('/')
+                    groups.getOrPut(receipt.group.removePrefix(prefix).substringBeforeLast('/')) { mutableListOf() } += receipt
             } }
         }
         val journals = absoluteRoot.resolve("deletions")
@@ -63,11 +63,13 @@ class MediaDeletion(private val root: Path) {
                 if (journal.taskId == taskId && !journal.complete &&
                     path.fileName.toString() == "${hash("$taskId/${journal.groupKey}/layout-migration")}.json") {
                     require(journal.version == 1)
-                    groups += journal.groupKey
+                    require(journal.receipts.all { it.version == MediaPublisher.VERSION &&
+                        it.group != "$taskId/${journal.groupKey}" && belongs(it.group, taskId, journal.groupKey) })
+                    groups.getOrPut(journal.groupKey) { mutableListOf() } += journal.receipts
                 }
             } }
         }
-        groups
+        groups.mapValues { it.value.distinct() }
     }
 
     /** Retire album-layout receipts only after a complete, intact Photos replacement exists. */
@@ -278,18 +280,7 @@ class MediaDeletion(private val root: Path) {
         node.isArray && node.size() == 4 && node[0].isTextual && resourceBelongs(node[0].asText(), group) &&
             node[1].isTextual && node[2].isIntegralNumber && node[2].asLong() >= 0 && node[3].isTextual
     }.getOrDefault(false)
-    private fun safeExport(path: Path, layout: String): Boolean = runCatching {
-        val expression = layout.trim()
-        val token = expression.indexOf("${'$'}{")
-        val base = if (token < 0) Path.of(expression) else {
-            val literal = expression.substring(0, token)
-            require(literal.isNotBlank())
-            if (literal.endsWith('/')) Path.of(literal) else Path.of(literal).parent ?: error("No fixed directory")
-        }
-        val boundary = base.toAbsolutePath().normalize()
-        boundary.parent != null && path != boundary && path.startsWith(boundary) && !path.startsWith(absoluteRoot) &&
-            !absoluteRoot.startsWith(boundary) && noSymlinks(boundary)
-    }.getOrDefault(false)
+    private fun safeExport(path: Path, layout: String) = safeMediaExport(path, layout, absoluteRoot)
     private fun normalized(value: String): Path = Path.of(value).toAbsolutePath().normalize()
     private fun validHash(value: String) = value.matches(Regex("[a-f0-9]{64}"))
     private fun matches(path: Path, expected: String) = validHash(expected) && runCatching {

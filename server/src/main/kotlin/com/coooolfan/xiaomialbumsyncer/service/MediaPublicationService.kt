@@ -11,10 +11,10 @@ import java.nio.file.Path
 
 @Managed
 class MediaPublicationService(private val sql: KSqlClient, private val media: CloudMediaService) {
-    fun legacyLayoutGroups(task: Crontab): Set<String> = if (task.config.synologyPhotos)
-        MediaDeletion(mediaStorageRoot()).legacyLayoutGroups(task.id) else emptySet()
+    fun legacyLayouts(task: Crontab): Map<String, List<PublicationReceipt>> = if (task.config.synologyPhotos)
+        MediaDeletion(mediaStorageRoot()).legacyLayouts(task.id) else emptyMap()
 
-    fun process(details: List<CrontabHistoryDetail>, systemConfig: SystemConfig, migrateLayout: Boolean = false) =
+    fun process(details: List<CrontabHistoryDetail>, systemConfig: SystemConfig, legacyReceipts: List<PublicationReceipt>? = null) =
         MediaFileLocks.group(MediaIdentity.of(details.first().asset).groupKey) {
             try {
                 requireCurrentPresence(details)
@@ -26,7 +26,7 @@ class MediaPublicationService(private val sql: KSqlClient, private val media: Cl
                 }
                 throw failure
             }
-            processLocked(details, systemConfig, migrateLayout)
+            processLocked(details, systemConfig, legacyReceipts)
         }
 
     private fun requireCurrentPresence(details: List<CrontabHistoryDetail>) {
@@ -43,7 +43,7 @@ class MediaPublicationService(private val sql: KSqlClient, private val media: Cl
         require(present.all { it._2 }) { "来源版本已变化，取消旧版本发布，下次同步将重试" }
     }
 
-    private fun processLocked(details: List<CrontabHistoryDetail>, systemConfig: SystemConfig, migrateLayout: Boolean) {
+    private fun processLocked(details: List<CrontabHistoryDetail>, systemConfig: SystemConfig, legacyReceipts: List<PublicationReceipt>?) {
         val task = details.first().crontabHistory.crontab
         val config = task.config
         val identity = MediaIdentity.of(details.first().asset)
@@ -89,8 +89,9 @@ class MediaPublicationService(private val sql: KSqlClient, private val media: Cl
                         set(table.verifiedSize, null)
                         where(table.id eq detail.id)
                     }
-                })
-            if (migrateLayout && config.synologyPhotos) {
+                },
+                localReceipts = if (config.synologyPhotos) legacyReceipts.orEmpty() else emptyList())
+            if (legacyReceipts != null && config.synologyPhotos) {
                 val migrated = MediaDeletion(root).retireAlbumLayouts(task.id, identity.groupKey)
                 require(migrated.status == "DELETED") {
                     "群晖布局迁移未完成，保留未清理文件，下次同步重试：${migrated.conflicts.joinToString("；")}" +
