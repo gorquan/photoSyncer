@@ -384,10 +384,11 @@ const messages: typeof zh = {
       title: 'Local retention mode',
       backup: 'Backup mode',
       mirror: 'Mirror mode',
-      backupHint:
-        'Download and update photos. Keep local exports and retained originals after cloud deletion.',
+      backupHint: 'Download and update photos. Keep local files after cloud deletion.',
+      xiaomiCursorBackupOnly:
+        'Xiaomi cursor sync supports backup only. Choose full or timeline sync for mirror mode.',
       mirrorHint:
-        'After confirmed cloud deletion, permanently remove this task’s managed exports and originals (including older versions) with no other task references. Live Photo components are removed together. Cloud files are never deleted by this app.',
+        'After confirmed library deletion, remove managed files with no other task references. Xiaomi full/timeline sync adds a complete deletion check; iCloud uses cursor changes. Live Photo components are removed together. Album removal keeps local files.',
       scanTitle: 'Scan strategy',
       scanHint:
         'Choose how to check cloud additions and updates, independently of retention and Photos compatibility.',

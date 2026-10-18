@@ -54,6 +54,125 @@ class ICloudChangesTest {
         } finally { server.stop(0) }
     }
 
+    @Test fun mirrorSteadyStateConsumesDeletionWithoutEnumeratingAlbums() {
+        val pages = mutableListOf<ICloudChangePage>()
+        val tombstone = mapper.valueToTree<JsonNode>(mapOf("recordName" to "gone", "deleted" to true))
+        val relation = record("CPLContainerRelation", "live-IN-album").deepCopy<JsonNode>().also {
+            (it as com.fasterxml.jackson.databind.node.ObjectNode).put("deleted", true)
+        }
+        val requests = mutableListOf<String>()
+        withServer({ path, body ->
+            requests += path
+            when (path) {
+                "zone" -> { assertEquals("before", body.at("/zones/0/syncToken").asText()); page("after", false, listOf(tombstone, relation)) }
+                "lookup" -> {
+                    assertEquals(listOf("gone"), body.path("records").map { it.path("recordName").asText() })
+                    mapOf("records" to listOf(mapOf("recordName" to "gone", "serverErrorCode" to "UNKNOWN_ITEM")))
+                }
+                else -> error("steady-state mirror must not enumerate")
+            }
+        }) { photos, client ->
+            assertFalse(photos.fetchIncrementalPages(listOf(album(1, "album")), client, "before", true,
+                { fail<Unit>("no baseline") }, { fail<Unit>("no baseline") }) { pages += it })
+        }
+        assertEquals(listOf("zone", "lookup"), requests)
+        assertEquals(mapOf("gone" to CloudPresence.DELETED), pages.single().presence)
+        assertTrue(pages.single().assets.isEmpty())
+        assertEquals("after", pages.single().cursor)
+    }
+
+    @Test fun restoredUntypedRelationTombstoneDoesNotDeletePhotoOrBlockCursor() {
+        val relation = mapper.valueToTree<JsonNode>(mapOf("recordName" to "photo-IN-album", "deleted" to true))
+        withServer({ path, _ -> when (path) {
+            "zone" -> page("after", false, listOf(relation))
+            "lookup" -> mapOf("records" to listOf(record("CPLContainerRelation", "photo-IN-album")))
+            else -> error("unexpected query")
+        } }) { photos, client ->
+            photos.fetchIncrementalPages(listOf(album(1, "album")), client, "before", true, {}, {}) {
+                assertTrue(it.presence.isEmpty()); assertTrue(it.assets.isEmpty()); assertEquals("after", it.cursor)
+            }
+        }
+    }
+
+    @Test fun mirrorFreshLookupRecognizesRestoreDespiteOldDeletionEvent() {
+        val stale = asset("restored").deepCopy<JsonNode>().also { (it as com.fasterxml.jackson.databind.node.ObjectNode).put("deleted", true) }
+        withServer({ path, body -> when (path) {
+            "zone" -> page("after", false, listOf(stale, master("restored")))
+            "lookup" -> { assertEquals("restored", body.at("/records/0/recordName").asText()); mapOf("records" to listOf(asset("restored"))) }
+            else -> error("unexpected query")
+        } }) { photos, client ->
+            photos.fetchIncrementalPages(listOf(album(1, "__all__")), client, "before", true, {}, {}) { page ->
+                assertEquals(mapOf("restored" to CloudPresence.LIVE), page.presence)
+                assertEquals(listOf("restored"), page.assets.map { ICloudResourceKey.decode(it.remoteKey).assetId })
+            }
+        }
+    }
+
+    @Test fun mirrorHiddenRestorationRemainsLiveOutsideSelectedCollection() {
+        withServer({ path, _ -> when (path) {
+            "zone" -> page("after", false, listOf(asset("hidden", hidden = 1), master("hidden")))
+            "lookup" -> mapOf("records" to listOf(asset("hidden", hidden = 1)))
+            else -> error("unexpected query")
+        } }) { photos, client ->
+            photos.fetchIncrementalPages(listOf(album(1, "__all__")), client, "before", true, {}, {}) { page ->
+                assertEquals(mapOf("hidden" to CloudPresence.LIVE), page.presence)
+                assertTrue(page.assets.isEmpty())
+            }
+        }
+    }
+
+    @Test fun malformedOrFailedMirrorLookupCannotAcknowledgePage() {
+        val responses = listOf(
+            mapOf("records" to emptyList<Any>()),
+            mapOf("records" to listOf(mapOf("recordName" to "other", "deleted" to true))),
+            mapOf("records" to listOf(mapOf("recordName" to "gone", "serverErrorCode" to "ACCESS_DENIED"))),
+            mapOf("records" to listOf(mapOf("recordName" to "gone", "deleted" to "yes"))),
+        )
+        for (response in responses) withServer({ path, _ ->
+            if (path == "zone") page("after", false, listOf(record("CPLAsset", "gone"))) else response
+        }) { photos, client ->
+            assertThrows(IllegalArgumentException::class.java) {
+                photos.fetchIncrementalPages(listOf(album(1, "__all__")), client, "before", true, {}, {}) {
+                    fail<Unit>("failed lookup must not acknowledge")
+                }
+            }
+        }
+    }
+
+    @Test fun mirrorBaselineCapturesTokenBeforeStrictScanThenReplaysChanges() {
+        val order = mutableListOf<String>()
+        withServer({ path, body -> when (path) {
+            "query" -> when {
+                body.path("resultsLimit").asInt() == 2 -> { order += "token"; mapOf("syncToken" to "before-scan", "records" to emptyList<Any>()) }
+                body.at("/query/recordType").asText() == "CheckIndexingState" -> mapOf("records" to listOf(record("Index", "index", mapOf("state" to "FINISHED"))))
+                body.at("/query/filterBy/0/fieldValue/value").asLong() == 0L -> { order += "scan"; mapOf("records" to listOf(asset("existing"), master("existing"))) }
+                else -> mapOf("records" to emptyList<Any>())
+            }
+            "zone" -> { order += "changes"; assertEquals("before-scan", body.at("/zones/0/syncToken").asText()); page("caught-up", false, emptyList()) }
+            else -> error("unexpected lookup")
+        } }) { photos, client ->
+            assertTrue(photos.fetchIncrementalPages(listOf(album(1, "__all__")), client, null, true,
+                { assertEquals(1, it.size) }, { order += "baseline"; assertEquals(setOf("existing"), it) }) {
+                assertEquals("caught-up", it.cursor)
+            })
+        }
+        assertEquals(listOf("token", "scan", "baseline", "changes"), order)
+    }
+
+    @Test fun pageConsumerFailureStopsBeforeReadingNextPage() {
+        var requests = 0
+        withServer({ path, body ->
+            assertEquals("zone", path); requests++
+            assertEquals("before", body.at("/zones/0/syncToken").asText())
+            page("middle", true, emptyList())
+        }) { photos, client ->
+            repeat(2) { assertThrows(IllegalStateException::class.java) {
+                photos.fetchIncrementalPages(listOf(album(1, "__all__")), client, "before", true, {}, {}) { error("storage unavailable") }
+            } }
+        }
+        assertEquals(2, requests)
+    }
+
     @Test fun distinguishesUnfinishedIndexFromMalformedResponsesAndRecordErrors() {
         val cases = listOf(
             mapOf("records" to listOf(record("Index", "index", mapOf("state" to "RUNNING")))) to "索引尚未完成（状态：RUNNING）",

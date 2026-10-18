@@ -1,5 +1,6 @@
 package com.coooolfan.xiaomialbumsyncer.service
 
+import com.coooolfan.xiaomialbumsyncer.exception.BadRequestException
 import com.coooolfan.xiaomialbumsyncer.config.TaskScheduler
 import com.coooolfan.xiaomialbumsyncer.controller.CrontabController.Companion.CRONTAB_WITH_ALBUMS_FETCHER
 import com.coooolfan.xiaomialbumsyncer.controller.CrontabCurrentStats
@@ -32,13 +33,16 @@ class CrontabService(private val sql: KSqlClient) {
     private val log = LoggerFactory.getLogger(this.javaClass)
 
     fun createCrontab(input: CrontabCreateInput, fetcher: Fetcher<Crontab>): Crontab {
-        validateSyncMode(input.accountId, input.syncMode)
+        validateSyncConfig(input.accountId, input.syncMode, input.config)
         val execute = sql.saveCommand(input, SaveMode.INSERT_ONLY).execute(fetcher)
         taskScheduler.initJobs()
         return execute.modifiedEntity
     }
 
-    private fun validateSyncMode(accountId: Long, mode: CrontabSyncMode) {
+    internal fun validateSyncConfig(accountId: Long, mode: CrontabSyncMode, config: CrontabConfig) {
+        if (config.syncCloudDeletes && mode == CrontabSyncMode.CURSOR &&
+            sql.findById(ProviderAccount::class, accountId)?.provider == CloudProvider.XIAOMI)
+            throw BadRequestException("小米位点增量仅支持备份；镜像模式请选择全量或时间线同步")
         require(mode != CrontabSyncMode.TIMELINE || sql.findById(ProviderAccount::class, accountId)?.provider != CloudProvider.ICLOUD) {
             "iCloud 不支持时间线同步，请选择全量或位点增量"
         }
@@ -133,10 +137,10 @@ class CrontabService(private val sql: KSqlClient) {
 
 
     fun updateCrontab(crontab: Crontab, fetcher: Fetcher<Crontab>): Crontab {
-        if (org.babyfish.jimmer.ImmutableObjects.isLoaded(crontab, "syncMode")) {
-            val existing = sql.findById(Crontab::class, crontab.id) ?: throw IllegalArgumentException("定时任务不存在")
-            validateSyncMode(existing.accountId, crontab.syncMode)
-        }
+        val existing = sql.findById(Crontab::class, crontab.id) ?: throw IllegalArgumentException("定时任务不存在")
+        validateSyncConfig(existing.accountId,
+            if (org.babyfish.jimmer.ImmutableObjects.isLoaded(crontab, "syncMode")) crontab.syncMode else existing.syncMode,
+            if (org.babyfish.jimmer.ImmutableObjects.isLoaded(crontab, "config")) crontab.config else existing.config)
         val execute = sql.saveCommand(crontab, SaveMode.UPDATE_ONLY).execute(fetcher)
         taskScheduler.initJobs()
         return execute.modifiedEntity
@@ -235,6 +239,18 @@ class CrontabService(private val sql: KSqlClient) {
             set(table.fetchedAllAssets, true)
             where(table.id eq crontabHistory.id)
         }
+    }
+
+    fun deletionReport(history: CrontabHistory): CloudDeletionReport? =
+        sql.findById(CrontabHistory::class, history.id)?.deletionReport
+
+    fun accumulateDeletionReport(history: CrontabHistory, result: CloudDeletionResult): CloudDeletionReport {
+        val previous = deletionReport(history) ?: CloudDeletionReport("CHECKING")
+        val next = previous.copy(status = "RUNNING", checkedGroups = previous.checkedGroups + result.checkedGroups,
+            newlyDeletedGroups = previous.newlyDeletedGroups + result.newlyDeletedGroups,
+            restoredGroups = previous.restoredGroups + result.restoredGroups)
+        recordDeletionReport(history, next)
+        return next
     }
 
     fun recordDeletionReport(history: CrontabHistory, report: CloudDeletionReport) {

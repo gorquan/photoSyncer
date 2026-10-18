@@ -19,7 +19,8 @@ class MediaDeletionService(private val sql: KSqlClient) {
         cleanup(crontab, groups, mediaStorageRoot())
 
     internal fun cleanup(crontab: Crontab, groups: List<CloudDeletionGroup>, root: Path): List<MediaDeletionResult> {
-        if (!crontab.config.syncCloudDeletes) return emptyList()
+        if (!crontab.config.syncCloudDeletes || (crontab.syncMode == CrontabSyncMode.CURSOR &&
+            sql.findById(ProviderAccount::class, crontab.accountId)?.provider == CloudProvider.XIAOMI)) return emptyList()
         require(groups.all { it.identity.accountId == crontab.accountId }) { "删除资源不属于当前任务账号" }
         return groups.map { group ->
             MediaDeletion(root).delete(crontab.id, group.groupKey, stillDeleted = {
