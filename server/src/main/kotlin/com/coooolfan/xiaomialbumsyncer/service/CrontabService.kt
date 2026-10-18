@@ -55,15 +55,17 @@ class CrontabService(private val sql: KSqlClient) {
     }
 
     fun deleteCrontab(id: Long) {
-        sql.executeDelete(Crontab::class) {
-            where(table.id eq id)
+        sql.transaction {
+            sql.executeDelete(MirrorInventory::class) { where(table.id eq id) }
+            sql.executeDelete(Crontab::class) { where(table.id eq id) }
         }
         taskScheduler.initJobs()
     }
 
     fun clearCrontabHistory(crontabId: Long) {
-        sql.executeDelete(CrontabHistory::class) {
-            where(table.crontabId eq crontabId)
+        sql.transaction {
+            sql.executeDelete(MirrorInventory::class) { where(table.id eq crontabId) }
+            sql.executeDelete(CrontabHistory::class) { where(table.crontabId eq crontabId) }
         }
     }
 
@@ -445,7 +447,6 @@ class CrontabService(private val sql: KSqlClient) {
             where(table.crontabHistory.crontabId eq crontabId)
             where(table.publicationStatus eq "PUBLISHED")
             where(table.asset.currentVersion eq true)
-            where(table.asset.cloudDeleted eq false)
             // A reverted source can reactivate an old asset row before its new export
             // succeeds. Only the latest successful owner of a path may patch it.
             where(notExists(subQuery(CrontabHistoryDetail::class) {

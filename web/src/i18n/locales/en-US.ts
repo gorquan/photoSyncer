@@ -388,7 +388,7 @@ const messages: typeof zh = {
       xiaomiCursorBackupOnly:
         'Xiaomi cursor sync supports backup only. Choose full or timeline sync for mirror mode.',
       mirrorHint:
-        'After confirmed library deletion, remove managed files with no other task references. Xiaomi full/timeline sync adds a complete deletion check; iCloud uses cursor changes. Live Photo components are removed together. Album removal keeps local files.',
+        'Mirror the selected albums: leaving all selected albums permanently removes managed local files. Full sync compares complete inventories; Xiaomi timeline reuses unchanged inventories; iCloud cursor consumes changes. Live Photo components are removed together. Files referenced by other tasks are retained.',
       scanTitle: 'Scan strategy',
       scanHint:
         'Choose how to check cloud additions and updates, independently of retention and Photos compatibility.',

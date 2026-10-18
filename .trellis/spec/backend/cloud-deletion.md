@@ -1,52 +1,39 @@
-# Mirror and provider retention contract
+# Task-selected mirror deletion
 
-## 1. Scope / Trigger
+## Scope / Trigger
+Cloud-to-local photo/video retention. Xiaomi FULL/TIMELINE and iCloud FULL/CURSOR support mirror; Xiaomi CURSOR supports backup only. Backup keeps provider scan behavior. No cloud writes. Mirror scope is the union of this task's selected albums, including leaving that scope while remaining elsewhere in the library.
 
-Cloud-to-local photo/video deletion supports Xiaomi FULL/TIMELINE and iCloud FULL/CURSOR. Xiaomi CURSOR is backup-only. Xiaomi mirror uses strict full enumeration plus recycle-bin/storage-presence confirmation; timeline fingerprints alone do not prove deletion. No cloud write/delete calls. Use existing media identities, receipts and ownership locks.
+## Signatures
+`CloudDeletionService.replaceSnapshot(task, albums, timeline?, zone?, records?)` commits a complete selected inventory inside the caller's transaction. `applyPage(task, ICloudChangePage)` updates affected record memberships. `deletedGroups(task)` returns selected/history groups absent from the committed union. `AssetService.refreshMirrorInventory` performs strict full/timeline enumeration; iCloud mirror cursor uses `refreshICloudAssetsByCursor` and `commitICloudPage`.
 
-## 2. Signatures
+## Contracts
+Private `mirror_inventory` stores task ID, per-album group keys and an exactly matched optional Xiaomi timeline. `mirror_members` is an indexed projection maintained by SQLite triggers in the same transaction, including rollback and deletion. Neither is exposed in API fetchers. Absence never mutates account-wide `Asset.cloudDeleted`; backups ignore legacy global flags. Publication SQL and under-lock checks use task+album membership. Missing inventory fails closed. Audio retains its existing backup path.
 
-- `CrontabConfig.syncCloudDeletes=false` for missing old fields; UI new tasks default mirror where supported. Creating/updating Xiaomi CURSOR mirror raises BadRequestException (HTTP400).
-- Existing Xiaomi FULL/TIMELINE settings and history stay intact; no legacy cursor migration is needed.
-- `ICloudChangePage(zone,cursor,assets,presence)` describes one provider page. `fetchIncrementalPages` supplies baseline, beforePage and consume callbacks and returns whether a baseline was established.
-- `CloudDeletionService.enabled`, `reconcileBaseline`, `applyStates`, `confirmPending`, `deletedGroups` are provider-scoped. `AssetService.commitICloudPage` commits presence, assets, deletion report and syncCursors atomically.
-- Mirror cursor keys append `:mirror-v1` to the account/zone/selected-album key. Backup cursor keys remain compatible. Histories expose executionStatus and deletionReport as before.
+FULL mirror strictly enumerates all selected albums once, then compares the complete union without recycle-bin or whole-library confirmation. Xiaomi TIMELINE first establishes a complete inventory. Same indexHash reuses the album inventory; changed hash enumerates all current nonempty dates and replaces the complete album inventory. Count decreases, equal-count replacements and whole-day removal must work. Capture timeline before enumeration; commit only after all pages succeed. Failures preserve last complete inventory, skip cleanup and publication, and do not advance the baseline.
 
-## 3. Contracts
+iCloud CURSOR mirror uses `:mirror-v2` keys isolated by account, zone and selected albums. New scope, missing inventory or expired token establishes a strict baseline with the token captured before enumeration. Subsequent pages consume changes without full scans. Selected relation removal, hidden/favorite state changes and asset deletion update current selected membership. Current-record lookup handles stale deletion events/restoration. Page inventory, assets, report and cursor commit atomically; no network inside the transaction. Concurrent account observations reject stale pages. Backup cursor routes remain compatible and do not consume mirror scope.
 
-iCloud first mirror run, changed selection and expired token capture a token BEFORE strict full enumeration, save observed live assets, probe known missing library records and replay changes since the captured token. Normal mirror CURSOR runs do not enumerate full albums. Explicit FULL mode still enumerates metadata; a newly established full baseline is reused rather than immediately scanning it again.
+Cleanup retries committed absence, including old histories after selection changes, without provider re-probes. Recheck presence under logical file locks and before publication commit. Keep receipts, hashes, path/symlink validation, ownership checks, deletion journals and partial reports. Other tasks' referenced files survive. Task deletion and clearing download history reset inventory/projection atomically; the next run rebuilds its baseline. No duplicate original storage is introduced.
 
-For each changed CPLAsset and untyped tombstone, batch lookup the current state outside DB transactions. Typed relation deletion never proves library deletion; restored untyped relation records are ignored. Validate response zone, token, complete records and exact unique lookup names. Only explicit deletion flags or per-record NOT_FOUND/UNKNOWN_ITEM confirm deletion. Current live assets clear tombstones even outside selected collections. Apply presence to all known roles, memberships and versions in the same account/zone, limited to selected or historical task scope. Preserve currentVersion independently.
-
-Before page network IO capture the media observation revision; reject commit if another account observation occurred. Under the media monitor and a SQLite transaction, apply presence, assets, report counters and cursor; update the in-memory cursor only after commit. Provider IO and file/group locking must remain outside transactions/monitor. A failed page is retryable; previously committed pages remain valid. Read persisted reports after rollback before recording failure.
-
-After metadata refresh succeeds, recheck recorded tombstones (including historical zones), then use existing cleanup with persisted presence rechecks under logical file locks. Cleanup failures/conflicts remain retryable independently of cursor advancement. Preserve path/hash/shared-owner protection, per-group deletion journals and partial results. New receipts have no archive; legacy archive cleanup remains readable for supported mirror modes. Runtime and cleanup both gate Xiaomi CURSOR mirror. Xiaomi FULL/TIMELINE mirror keeps strict enumeration and explicit recycle-bin evidence; a purged unobservable object never becomes a newly confirmed deletion. Previously persisted intent survives only explicit uncertain-storage responses, not auth/network failures.
-
-Strict Apple full enumeration preserves opaque continuation markers, query/rank/filters/zone throughout each chain; reject malformed, repeated, empty nonterminal, duplicate or deleted live pages. Unknown failures never become empty successful lists.
-
-## 4. Validation & Error Matrix
-
-| Event | Result |
+## Validation & Error Matrix
+| Input / condition | Required result |
 | --- | --- |
-| Xiaomi CURSOR mirror input | HTTP400; settings unchanged |
-| Xiaomi FULL/TIMELINE mirror input | Accepted; complete deletion check retained |
-| Valid iCloud token, empty page | Commit checkpoint; no full enumeration |
-| Deleted CPLAsset / untyped tombstone with current deletion proof | Save tombstone and cursor together |
-| Album move, hide, favorite change, restored photo | Preserve files; clear old deletion state |
-| Invalid/expired token | Strict baseline and replay |
-| Lookup/auth/page/transaction failure | Abort run; no cleanup; failed page cursor not advanced |
-| Cleanup failure after checkpoint | Retain journal/tombstone; retry later |
-| Modified, unsafe or shared target | Preserve affected file, report conflict/deferred |
+| Xiaomi CURSOR mirror create/update | HTTP400; no changed settings |
+| Successful empty full or timeline inventory | Remove owned absent groups |
+| Present in another selected album | Retain, publish current membership |
+| Present only outside selected scope | Remove this task's managed files |
+| Failed/malformed scan or incomplete lookup | Preserve inventory/files; no cursor acknowledgment |
+| Failed page transaction | Roll back inventory/projection/assets/report/cursor |
+| Missing/changed scope or expired cursor | Rebuild complete baseline |
+| Same Xiaomi timeline index | No media enumeration |
+| Changed equal/decreasing day counts | Observe replacements and remove old members |
+| Hash mismatch, symlink or shared file ownership | Preserve affected file; report conflict/deferred cleanup |
 
-## 5. Good / Base / Bad Cases
+## Good / Base / Bad Cases
+Good: a photo removed from all selected albums is absent only for this mirror task; another task's backup remains available. Base: backup imports observed additions/updates and retains removed photos. Bad: querying recycle bins to override complete selected absence, mutating global flags for task absence, or using an interrupted enumeration as a new baseline.
 
-Good: incremental deletion commits every component/version with the checkpoint, then safely unlinks outputs; restoration later clears tombstones. Base: backup ignores deletion and retains local files. Bad: treating relation removal or a failed lookup as deletion; reusing a backup cursor without a mirror baseline; committing cursor before presence.
+## Tests Required
+Use real SQLite/Flyway, synthetic provider HTTP and temporary files for task/account/zone scope, migration, indexed projection, rollback, current memberships, full and timeline absence, empty dates, unchanged hashes, cursor deletion/restore and relation changes. Keep ownership/path/hash conflict and retry tests. Run JDK25 clean compileKotlin test apiE2eJvm and frontend yarn lint/format/build. Synthetic tests do not prove real Apple destructive event delivery; never mutate real cloud media without user authorization.
 
-## 6. Tests Required
-
-Protocol HTTP tests cover steady-state no-scan, deletion/current restore, hidden/out-of-selection live state, relation tombstones, incomplete lookups, consumer failure, baseline token ordering and expiration. Real SQLite tests cover account/zone/history scope, legacy identities, rollback AFTER asset writes on checkpoint failure, concurrent observation guards and restored pending groups. Temp-file integration proves checkpoint then delete then restore without an original pool. API E2E covers Xiaomi FULL/TIMELINE mirror deletion, restoration, conflict, retry and enumeration failure; rejects CURSOR mirror create/update; preserves backup/timeline/cursor behavior. Run JDK25 clean compileKotlin test + apiE2eJvm and frontend yarn lint/format/build. Cloud testing remains read-only unless user explicitly authorizes media mutations; synthetic results do not prove real Apple deletion delivery.
-
-## 7. Wrong vs Correct
-
-Wrong: delete files because an album lost a member, or advance syncToken before persisting deleted state.
-Correct: current library deletion proof → transactional presence/assets/report/checkpoint → successful refresh → current pending-state confirmation → ownership/hash/lock checks → journaled cleanup.
+## Wrong vs Correct
+Wrong: "album removal is never deletion" or "full iCloud mirror must read changes too". Correct: mirror follows selected album membership, full scans directly compare complete inventories, and iCloud cursor changes update that same task-scoped model.

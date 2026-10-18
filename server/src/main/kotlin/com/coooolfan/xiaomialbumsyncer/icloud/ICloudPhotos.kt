@@ -83,6 +83,9 @@ class ICloudPhotos(private val accounts: ICloudAccountService) {
 
     fun fetchAssets(album: Album, handler: (List<Asset>) -> Unit): Long = accounts.withClient(album.accountId) { fetchAssets(album, it, handler = handler) }
 
+    fun fetchAssetsForMirror(album: Album, handler: (List<Asset>) -> Unit): Long =
+        accounts.withClient(album.accountId) { fetchAssets(album, it, strict = true, handler = handler) }
+
     internal fun fetchAssets(album: Album, client: ICloudClient, strict: Boolean = false, handler: (List<Asset>) -> Unit): Long {
         val ref = ICloudAlbumKey.decode(album.remoteKey)
         checkIndex(client, ref.zone)
@@ -115,7 +118,9 @@ class ICloudPhotos(private val accounts: ICloudAccountService) {
                 require(seen.add(recordName)) { "iCloud 资产分页重复，请重试同步" }
                 val masterName = field(asset, "masterRef").path("recordName").asText()
                 val master = allMasters[masterName] ?: error("iCloud 资产缺少原件记录")
-                parseResources(album, asset, master)
+                parseResources(album, asset, master).also {
+                    if (strict) require(it.isNotEmpty()) { "iCloud 镜像资产缺少可用原件，本次保留文件" }
+                }
             }
             handler(rows)
             total += rows.size
@@ -126,12 +131,6 @@ class ICloudPhotos(private val accounts: ICloudAccountService) {
         }
         return total
     }
-
-    fun probePresence(accountId: Long, zone: String, recordName: String): CloudPresence =
-        accounts.withClient(accountId) { client ->
-            parseICloudPresence(client.cloud("records/lookup", mapOf("zoneID" to zoneId(zone),
-                "records" to listOf(mapOf("recordName" to recordName)))), recordName)
-        }
 
     fun fetchIncremental(albums: List<Album>, cursor: String?, handler: (List<Asset>) -> Unit, commitCursor: (String) -> Unit) {
         require(albums.isNotEmpty())

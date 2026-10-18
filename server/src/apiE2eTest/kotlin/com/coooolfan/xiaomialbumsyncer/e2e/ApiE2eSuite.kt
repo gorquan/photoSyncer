@@ -877,6 +877,7 @@ class ApiE2eSuite {
     /** Synthetic cloud only: single-copy exports mirror confirmed deletion in full and timeline modes. */
     private fun executeCloudDeletionWorkflow(api: ApiClient, mock: MockXiaomiApiServer, workDir: Path,
                                             accountId: Long, baseConfig: LinkedHashMap<String, Any?>) {
+        val recycleRequests = mock.routeCount("/gallery/deleted_v2")
         for ((index, mode) in listOf("FULL", "TIMELINE").withIndex()) {
             val remoteAlbum = 70 + index
             val remoteAsset = 700 + index
@@ -951,9 +952,9 @@ class ApiE2eSuite {
             assertFalse(failed.path("fetchedAllAssets").asBoolean())
             assertTrue(failed.path("syncCursors").isNull || failed.path("syncCursors").isMissingNode)
             assertEquals(beforeFull, mock.routeCount("/gallery/album/full"))
-            assertEquals(beforeTimeline, mock.routeCount("/gallery/user/timeline"))
+            assertEquals(beforeTimeline + if (mode == "TIMELINE") 1 else 0, mock.routeCount("/gallery/user/timeline"))
             assertEquals(beforeCursor, mock.routeCount("/gallery/allitems"))
-            assertEquals(beforeGallery + 1, mock.routeCount("/gallery/user/galleries"))
+            assertEquals(beforeGallery + if (mode == "FULL") 1 else 0, mock.routeCount("/gallery/user/galleries"))
             assertEquals(beforeStorage, mock.routeCount("/gallery/storage"))
             assertTrue(Files.exists(export)); assertFalse(Files.exists(workDir.resolve("fallback/media/originals")))
             // Failure/deletion-only rows must not disappear into collapsed zero-asset histories.
@@ -981,50 +982,64 @@ class ApiE2eSuite {
             api.delete("/api/crontab/$task").expect(200)
         }
         assertEquals(beforeDeleted, mock.routeCount("/gallery/deleted_v2"))
+        assertEquals(recycleRequests, mock.routeCount("/gallery/deleted_v2"), "mirrors compare selected scope without recycle confirmation")
     }
 
     /** Count decreases and same-count replacements must still import newly observed records. */
     private fun executeTimelineReplacementWorkflow(api: ApiClient, mock: MockXiaomiApiServer, workDir: Path,
                                                    accountId: Long, baseConfig: LinkedHashMap<String, Any?>) {
-        val remoteAlbum = 75
-        fun mutate(operation: Map<String, Any?>) = mock.mutate(mapOf("operations" to listOf(mapOf("userId" to "mock-user") + operation)))
-        fun add(ids: List<Int>) = mutate(mapOf("op" to "addAssets", "albumId" to remoteAlbum, "assets" to ids.map {
-            mapOf("id" to it, "type" to "image", "fileName" to "timeline-$it.jpg", "dateTaken" to 1714651200000L,
-                "size" to 4096, "sha1Mode" to "exact", "contentMode" to "jpeg")
-        }))
-        mutate(mapOf("op" to "createAlbum", "album" to mapOf("albumId" to remoteAlbum, "name" to "Timeline replacements")))
-        add(listOf(750, 751, 752))
-        val albumId = findAlbumId(api.json(api.get("/api/album/latest/$accountId").expect(200)), remoteAlbum.toString())
-        val config = LinkedHashMap(baseConfig).apply {
-            this["syncCloudDeletes"] = false; this["synologyPhotos"] = true; this["notify"] = false
-            this["skipExistingFile"] = true
-            this["targetPath"] = workDir.resolve("timeline-replacements").toString()
+        for (mirror in listOf(false, true)) {
+            val remoteAlbum = if (mirror) 76 else 75
+            val ids = (0..4).map { remoteAlbum * 10 + it }
+            fun mutate(operation: Map<String, Any?>) = mock.mutate(mapOf("operations" to listOf(mapOf("userId" to "mock-user") + operation)))
+            fun add(ids: List<Int>) = mutate(mapOf("op" to "addAssets", "albumId" to remoteAlbum, "assets" to ids.map {
+                mapOf("id" to it, "type" to "image", "fileName" to "timeline-$it.jpg", "dateTaken" to 1714651200000L,
+                    "size" to 4096, "sha1Mode" to "exact", "contentMode" to "jpeg")
+            }))
+            mutate(mapOf("op" to "createAlbum", "album" to mapOf("albumId" to remoteAlbum, "name" to "Timeline replacements")))
+            add(listOf(ids[0], ids[1], ids[2]))
+            val albumId = findAlbumId(api.json(api.get("/api/album/latest/$accountId").expect(200)), remoteAlbum.toString())
+            val config = LinkedHashMap(baseConfig).apply {
+                this["syncCloudDeletes"] = mirror; this["synologyPhotos"] = true; this["notify"] = false
+                this["skipExistingFile"] = true
+                this["targetPath"] = workDir.resolve("timeline-replacements-$mirror").toString()
+            }
+            val task = api.json(api.post("/api/crontab", mapOf("name" to "Timeline replacements", "description" to "Timeline replacements",
+                "enabled" to false, "syncMode" to "TIMELINE", "config" to config, "accountId" to accountId,
+                "albumIds" to listOf(albumId))).expect(200)).path("id").asLong()
+            var previous: Long? = null
+            fun run(expected: Int): JsonNode {
+                api.post("/api/crontab/$task/executions").expect(200)
+                val historyId = awaitCompletedHistory(api, task, previous); previous = historyId
+                assertCompletedDetailCount(api, historyId, expected)
+                return api.json(api.get("/api/crontab/history/$historyId/details?pageIndex=0&pageSize=10").expect(200)).path("rows")
+            }
+            val initial = run(3)
+            val initialPaths = initial.map { Path.of(it.path("filePath").asText()) }
+            mutate(mapOf("op" to "deleteAssets", "albumId" to remoteAlbum, "ids" to listOf(ids[0], ids[1])))
+            add(listOf(ids[3]))
+            val decreased = run(if (mirror) 2 else 4)
+            val addedId = findAssetId(api, albumId, ids[3].toString())
+            assertTrue(decreased.any { it.path("asset").path("id").asText() == addedId && Files.exists(Path.of(it.path("filePath").asText())) })
+            mutate(mapOf("op" to "deleteAssets", "albumId" to remoteAlbum, "ids" to listOf(ids[2])))
+            add(listOf(ids[4]))
+            val replaced = run(if (mirror) 2 else 5)
+            val replacementId = findAssetId(api, albumId, ids[4].toString())
+            assertTrue(replaced.any { it.path("asset").path("id").asText() == replacementId && Files.exists(Path.of(it.path("filePath").asText())) })
+            val before = mock.routeCount("/gallery/user/galleries")
+            run(if (mirror) 2 else 5)
+            assertEquals(before, mock.routeCount("/gallery/user/galleries"), "unchanged index should skip enumeration")
+            if (mirror) {
+                assertTrue(initialPaths.none(Files::exists), "replaced and removed members must be unlinked")
+                mutate(mapOf("op" to "deleteAssets", "albumId" to remoteAlbum, "ids" to listOf(ids[3], ids[4])))
+                run(0)
+                assertTrue(replaced.none { Files.exists(Path.of(it.path("filePath").asText())) }, "empty days must remove their remaining exports")
+                val emptyBefore = mock.routeCount("/gallery/user/galleries")
+                run(0)
+                assertEquals(emptyBefore, mock.routeCount("/gallery/user/galleries"))
+            } else assertTrue(initialPaths.all(Files::exists), "backup keeps removed cloud members")
+            api.delete("/api/crontab/$task").expect(200)
         }
-        val task = api.json(api.post("/api/crontab", mapOf("name" to "Timeline replacements", "description" to "Backup replacements",
-            "enabled" to false, "syncMode" to "TIMELINE", "config" to config, "accountId" to accountId,
-            "albumIds" to listOf(albumId))).expect(200)).path("id").asLong()
-        var previous: Long? = null
-        fun run(expected: Int): JsonNode {
-            api.post("/api/crontab/$task/executions").expect(200)
-            val historyId = awaitCompletedHistory(api, task, previous); previous = historyId
-            assertCompletedDetailCount(api, historyId, expected)
-            return api.json(api.get("/api/crontab/history/$historyId/details?pageIndex=0&pageSize=10").expect(200)).path("rows")
-        }
-        run(3)
-        mutate(mapOf("op" to "deleteAssets", "albumId" to remoteAlbum, "ids" to listOf(750, 751)))
-        add(listOf(753))
-        val decreased = run(4)
-        val addedId = findAssetId(api, albumId, "753")
-        assertTrue(decreased.any { it.path("asset").path("id").asText() == addedId && Files.exists(Path.of(it.path("filePath").asText())) })
-        mutate(mapOf("op" to "deleteAssets", "albumId" to remoteAlbum, "ids" to listOf(752)))
-        add(listOf(754))
-        val replaced = run(5)
-        val replacementId = findAssetId(api, albumId, "754")
-        assertTrue(replaced.any { it.path("asset").path("id").asText() == replacementId && Files.exists(Path.of(it.path("filePath").asText())) })
-        val before = mock.routeCount("/gallery/user/galleries")
-        run(5)
-        assertEquals(before, mock.routeCount("/gallery/user/galleries"), "unchanged index should skip enumeration")
-        api.delete("/api/crontab/$task").expect(200)
     }
 
     private fun assertCompletedDetailCount(api: ApiClient, historyId: Long, expected: Int) {

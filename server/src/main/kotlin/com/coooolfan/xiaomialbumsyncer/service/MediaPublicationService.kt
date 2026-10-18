@@ -30,12 +30,14 @@ class MediaPublicationService(private val sql: KSqlClient, private val media: Cl
         val ids = details.map { it.asset.id }.distinct()
         val present = ids.chunked(200).flatMap { batch -> sql.executeQuery(Asset::class) {
             where(table.id valueIn batch)
-            select(table.id, table.cloudDeleted, table.currentVersion)
+            select(table.id, table.currentVersion)
         } }
-        require(present.size == ids.size && present.none { it._2 }) {
+        require(present.size == ids.size && (!details.first().crontabHistory.crontab.config.syncCloudDeletes || details.all {
+            it.asset.type == AssetType.AUDIO || mirrorContains(sql, it.crontabHistory.crontab.id, it.asset.album.id, MediaIdentity.of(it.asset).groupKey)
+        })) {
             "云端资源已删除或不可用，取消发布，等待删除同步"
         }
-        require(present.all { it._3 }) { "来源版本已变化，取消旧版本发布，下次同步将重试" }
+        require(present.all { it._2 }) { "来源版本已变化，取消旧版本发布，下次同步将重试" }
     }
 
     private fun processLocked(details: List<CrontabHistoryDetail>, systemConfig: SystemConfig) {

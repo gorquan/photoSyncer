@@ -38,7 +38,7 @@ class MediaDeletionServiceTest {
         val cursors = mutableMapOf(key to "before")
         val notify = NotifyService(sql)
         val icloud = ICloudPhotos(ICloudAccountService(sql, notify))
-        val deletion = CloudDeletionService(sql, XiaoMiApi(TokenManager(sql, notify)), icloud, media)
+        val deletion = CloudDeletionService(sql, media)
         val assets = AssetService(sql, XiaoMiApi(TokenManager(sql, notify)), media, icloud)
         fun publish() = MediaPublisher(root).publish("${task.id}/${identity.groupKey}", task.config.targetPath, "v", listOf(detail),
             { _, path -> Files.write(path, jpeg); true }, { _, _ -> })
@@ -50,7 +50,6 @@ class MediaDeletionServiceTest {
         assertEquals("deleted", sql.findById(CrontabHistory::class, history.id)!!.syncCursors!![key])
         assertTrue(Files.exists(output), "checkpoint persistence does not delete files")
         val cleanup = MediaDeletionService(sql)
-        deletion.confirmPending(task) { CloudPresence.DELETED }
         val deleted = cleanup.cleanup(task, deletion.deletedGroups(task), root).single()
         assertEquals(1, deleted.exportsDeleted)
         assertFalse(Files.exists(output))
@@ -95,7 +94,7 @@ class MediaDeletionServiceTest {
         val cleanup = MediaDeletionService(sql)
         assertEquals("RESTORED", cleanup.cleanup(task, listOf(group), root).single().status)
         assertTrue(Files.exists(Path.of(receipt.outputs.single().path)))
-        sql.executeUpdate(Asset::class) { set(table.cloudDeleted, true) }
+        sql.saveCommand(MirrorInventory { id = task.id; albums = mapOf(detail.asset.album.id to emptySet()); timeline = null }, SaveMode.UPSERT).execute()
         val disabled = Crontab(task) { config = task.config.copy(syncCloudDeletes = false) }
         assertTrue(cleanup.cleanup(disabled, listOf(group), root).isEmpty())
         assertTrue(Files.exists(Path.of(receipt.outputs.single().path)))
@@ -104,10 +103,12 @@ class MediaDeletionServiceTest {
         assertFalse(Files.exists(Path.of(receipt.outputs.single().path)))
         // Re-import is authoritative restoration; the stale deletion result cannot remove new bytes.
         media.saveAssets(listOf(detail.asset))
+        sql.saveCommand(MirrorInventory { id = task.id; albums = mapOf(detail.asset.album.id to setOf(identity.groupKey)); timeline = null }, SaveMode.UPSERT).execute()
         assertEquals("RESTORED", cleanup.cleanup(task, listOf(group), root).single().status)
     }
 
     @Test fun stalePublicationPageRechecksDatabaseAfterWaitingForGroupLock() = withStore { sql, media, detail ->
+        val task = detail.crontabHistory.crontab
         val key = MediaIdentity.of(detail.asset).groupKey
         val entered = CountDownLatch(1)
         val pool = Executors.newSingleThreadExecutor()
@@ -122,7 +123,7 @@ class MediaDeletionServiceTest {
                     } catch (failure: IllegalArgumentException) { failure.message ?: "" }
                 }
                 assertTrue(entered.await(5, TimeUnit.SECONDS))
-                sql.executeUpdate(Asset::class) { set(table.cloudDeleted, true) }
+                sql.saveCommand(MirrorInventory { id = task.id; albums = mapOf(detail.asset.album.id to emptySet()); timeline = null }, SaveMode.UPSERT).execute()
                 // The publisher cannot enter while this logical group is locked.
                 assertFalse(publishing.isDone)
             }
@@ -213,6 +214,7 @@ class MediaDeletionServiceTest {
             val history = sql.saveCommand(CrontabHistory {
                 crontabId = task.id; startTime = Instant.EPOCH; endTime = null; fetchedAllAssets = true; syncCursors = null; timelineSnapshot = null
             }, SaveMode.INSERT_ONLY).execute().modifiedEntity
+            sql.saveCommand(MirrorInventory { id = task.id; albums = mapOf(album.id to setOf(MediaIdentity.of(asset).groupKey)); timeline = null }, SaveMode.INSERT_ONLY).execute()
             val detailedHistory = CrontabHistory(history) { crontab = task }
             val detailRow = sql.saveCommand(CrontabHistoryDetail(CrontabHistoryDetail.init(detailedHistory, asset)) {
                 publicationStatus = "LEGACY"; message = null

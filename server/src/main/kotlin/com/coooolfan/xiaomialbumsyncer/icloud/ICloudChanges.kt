@@ -12,6 +12,8 @@ data class ICloudChangePage(
     val cursor: String,
     val assets: List<Asset>,
     val presence: Map<String, CloudPresence>,
+    /** Changed record -> current memberships among this task's selected albums. */
+    val scope: Map<String, Set<Long>> = emptyMap(),
 )
 
 /** CloudKit 图库变更流；协议参考 kei 的 syncToken 文档（见 THIRD_PARTY_NOTICES）。 */
@@ -106,11 +108,21 @@ private fun ICloudPhotos.readChanges(
         require(records.all { it.path("recordName").asText().isNotBlank() && it.path("serverErrorCode").asText().isBlank() }) {
             "iCloud 变化记录不完整"
         }
-        // Tombstones can omit recordType. Relation tombstones do not imply library deletion.
-        val candidates = if (mirror) records.filter {
+        // Relation tombstones affect selected membership even when the asset still exists in the library.
+        val relationTargets = if (mirror) records.mapNotNull { record ->
+            val type = record.path("recordType").asText()
+            if (type != "CPLContainerRelation" && !(type.isBlank() && !live(record))) return@mapNotNull null
+            val name = record.path("recordName").asText()
+            val container = field(record, "containerId").asText()
+            val item = field(record, "itemId").asText()
+            val target = if (container in selectedContainers && item.isNotBlank()) item else
+                selectedContainers.firstOrNull { name.endsWith("-IN-$it") }?.let { name.removeSuffix("-IN-$it") }
+            target?.let { name to it }
+        }.toMap() else emptyMap()
+        val candidates = if (mirror) (records.filter {
             it.path("recordType").asText() == "CPLAsset" ||
-                it.path("recordType").asText().isBlank() && !live(it)
-        }.map { it.path("recordName").asText() }.distinct() else emptyList()
+                it.path("recordType").asText().isBlank() && !live(it) && it.path("recordName").asText() !in relationTargets
+        }.map { it.path("recordName").asText() } + relationTargets.values).distinct() else emptyList()
         val current = lookupPresenceRecords(client, zone, candidates)
         val presence = current.filterNot {
             // An untyped relation tombstone may have been restored since its event was emitted.
@@ -136,19 +148,9 @@ private fun ICloudPhotos.readChanges(
         // 成员关系的 recordName 可直接 lookup；查询的是当前成员状态，跨页关系也不会漏掉。
         val relationNames = liveAssets.flatMap { asset -> userAlbums.map { "${asset.path("recordName").asText()}-IN-${albumKeys.getValue(it.id).albumId}" } }
         val memberships = lookupRecords(client, zone, relationNames).filter(::live).map { it.path("recordName").asText() }.toSet()
-        val rows = liveAssets.flatMap { changed ->
-            val name = changed.path("recordName").asText()
-            var asset = changed
-            var master = masters[field(asset, "masterRef").path("recordName").asText()]
-            if (master == null) {
-                // 变更流中的资产可能已被永久删除，确认当前状态后再决定是否推进。
-                asset = lookupRecords(client, zone, listOf(name)).singleOrNull()?.takeIf(::live)
-                    ?: return@flatMap emptyList()
-                master = lookupRecords(client, zone, listOf(field(asset, "masterRef").path("recordName").asText())).singleOrNull()
-                    ?: error("iCloud 变化资产缺少原件记录，请稍后重试")
-            }
-            if (!live(master)) return@flatMap emptyList()
-            albums.filter { album ->
+        fun selectedMemberships(asset: JsonNode): List<Album> {
+            val name = asset.path("recordName").asText()
+            return albums.filter { album ->
                 val ref = albumKeys.getValue(album.id)
                 when (ref.albumId) {
                     "__all__" -> !field(asset, "isHidden").asBoolean()
@@ -159,10 +161,32 @@ private fun ICloudPhotos.readChanges(
                     "__bursts__" -> field(asset, "burstId").asText("").isNotBlank() && !field(asset, "isHidden").asBoolean()
                     else -> "$name-IN-${ref.albumId}" in memberships
                 }
-            }.flatMap { parseResources(it, asset, master) }
+            }
+        }
+        val rows = liveAssets.flatMap { changed ->
+            val name = changed.path("recordName").asText()
+            var asset = changed
+            var master = masters[field(asset, "masterRef").path("recordName").asText()]
+            if (mirror && (master == null || !live(master))) {
+                master = lookupRecords(client, zone, listOf(field(asset, "masterRef").path("recordName").asText()))
+                    .singleOrNull()?.takeIf(::live) ?: error("iCloud 镜像变化资产缺少有效原件，本页位点未推进")
+            }
+            if (master == null) {
+                // 变更流中的资产可能已被永久删除，确认当前状态后再决定是否推进。
+                asset = lookupRecords(client, zone, listOf(name)).singleOrNull()?.takeIf(::live)
+                    ?: return@flatMap emptyList()
+                master = lookupRecords(client, zone, listOf(field(asset, "masterRef").path("recordName").asText())).singleOrNull()
+                    ?: error("iCloud 变化资产缺少原件记录，请稍后重试")
+            }
+            if (!live(master)) return@flatMap emptyList()
+            selectedMemberships(asset).flatMap { parseResources(it, asset, master) }
         }
         // The consumer atomically saves the page with its checkpoint. Empty pages still advance.
-        consume(ICloudChangePage(zone, next, rows, presence))
+        val scope = if (mirror) (presence.keys + assets.keys).associateWith { record ->
+            liveAssets.firstOrNull { it.path("recordName").asText() == record }
+                ?.let { selectedMemberships(it).map { album -> album.id }.toSet() }.orEmpty()
+        } else emptyMap()
+        consume(ICloudChangePage(zone, next, rows, presence, scope))
         token = next
         if (!more.asBoolean()) break
     }
