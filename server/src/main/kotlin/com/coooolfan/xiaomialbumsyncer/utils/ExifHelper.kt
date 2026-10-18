@@ -61,7 +61,7 @@ fun rewriteVideoExifTime(asset: Asset, path: Path, config: ExifRewriteConfig) {
 }
 
 fun runExifTool(binPath: Path, args: List<String>, failedConditionIsSuccess: Boolean = false): String {
-    val command = listOf(binPath.toString()) + args
+    val command = listOf(binPath.toString(), "-api", "LargeFileSupport=1") + args
 
     val process = ProcessBuilder(command)
         .redirectErrorStream(true)
