@@ -41,16 +41,41 @@ class MediaDeletionTest {
         return CrontabHistoryDetail(CrontabHistoryDetail.init(history, asset)) { id = asset.id }
     }
     private fun key(input: CrontabHistoryDetail = detail()) = MediaIdentity.of(input.asset).groupKey
-    private fun publish(inputs: List<CrontabHistoryDetail>, transform: (CrontabHistoryDetail, Path) -> Unit = { _, _ -> }): PublicationReceipt {
+    private fun publishLegacy(inputs: List<CrontabHistoryDetail>, transform: (CrontabHistoryDetail, Path) -> Unit = { _, _ -> }): PublicationReceipt {
         val task = inputs.first().crontabHistory.crontab
-        return MediaPublisher(root).publish("${task.id}/${key(inputs.first())}", task.config.targetPath, inputs.map { it.asset.checksum }.toString(), inputs,
+        val current = MediaPublisher(root).publish("${task.id}/${key(inputs.first())}", task.config.targetPath, inputs.map { it.asset.checksum }.toString(), inputs,
             { asset, path -> Files.write(path, if (asset.type == AssetType.VIDEO) mov else jpeg); true }, transform)
+        // Explicit compatibility fixture: only older releases retained this extra copy.
+        val legacy = current.copy(outputs = current.outputs.map { output ->
+            val archive = root.resolve("originals/${hash(output.source)}.original")
+            Files.createDirectories(archive.parent)
+            Files.write(archive, if (output.resource.endsWith("/resOriginalVidCompl")) mov else jpeg)
+            Files.writeString(Path.of("$archive.json"), mapper.writeValueAsString(ArchivedOriginal(output.source, output.originalSha256, output.size)))
+            output.copy(archive = archive.toString())
+        })
+        Files.writeString(root.resolve("receipts/${hash(legacy.group + legacy.layout)}.json"), mapper.writeValueAsString(legacy))
+        return legacy
     }
+    private fun hash(value: String) = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(value.toByteArray()))
+
+    @Test fun newPublicationDeletesOnlyTargetsAndNeverCreatesOriginalStorage() {
+        val inputs = listOf(detail(), detail("resOriginalVidCompl"))
+        val receipt = MediaPublisher(root).publish("1/${key()}", inputs.first().crontabHistory.crontab.config.targetPath, "v1", inputs,
+            { asset, path -> Files.write(path, if (asset.type == AssetType.VIDEO) mov else jpeg); true }, { _, _ -> })
+        assertTrue(receipt.outputs.all { it.archive.isEmpty() })
+        assertFalse(Files.exists(root.resolve("originals")))
+        val result = delete()
+        assertEquals("DELETED", result.status)
+        assertEquals(2, result.exportsDeleted)
+        assertEquals(0, result.originalsDeleted)
+        assertTrue(receipt.outputs.all { !Files.exists(Path.of(it.path)) })
+    }
+
     private fun delete(task: Long = 1) = MediaDeletion(root).delete(task, key())
     private fun countOriginals() = Files.list(root.resolve("originals")).use { it.filter { path -> path.fileName.toString().endsWith(".original") }.count() }
 
     @Test fun applePairAlternateDeletionAndRepeatAreIdempotent() {
-        val receipt = publish(listOf(detail(), detail("resOriginalVidCompl"), detail("resOriginalAlt")))
+        val receipt = publishLegacy(listOf(detail(), detail("resOriginalVidCompl"), detail("resOriginalAlt")))
         val result = delete()
         assertEquals("DELETED", result.status); assertEquals(3, result.exportsDeleted); assertEquals(3, result.originalsDeleted)
         assertTrue(receipt.outputs.all { !Files.exists(Path.of(it.path)) && !Files.exists(Path.of(it.archive)) })
@@ -59,17 +84,17 @@ class MediaDeletionTest {
     }
     @Test fun xiaomiSingleFileIsDeleted() {
         val input = detail(provider = CloudProvider.XIAOMI)
-        val receipt = publish(listOf(input))
+        val receipt = publishLegacy(listOf(input))
         assertEquals("DELETED", MediaDeletion(root).delete(1, key(input)).status)
         assertFalse(Files.exists(Path.of(receipt.outputs.single().path))); assertFalse(Files.exists(Path.of(receipt.outputs.single().archive)))
     }
     @Test fun oldVersionsAndFailedPrepareOriginalsAreDeleted() {
-        publish(listOf(detail())); publish(listOf(detail(version = "v2")))
-        assertThrows(IllegalStateException::class.java) { publish(listOf(detail(version = "v3")), transform = { _, _ -> error("interrupted prepare") }) }
-        assertEquals(3L, countOriginals()); assertEquals(3, delete().originalsDeleted); assertEquals(0L, countOriginals())
+        publishLegacy(listOf(detail())); publishLegacy(listOf(detail(version = "v2")))
+        assertThrows(IllegalStateException::class.java) { publishLegacy(listOf(detail(version = "v3")), transform = { _, _ -> error("interrupted prepare") }) }
+        assertEquals(2L, countOriginals()); assertEquals(2, delete().originalsDeleted); assertEquals(0L, countOriginals())
     }
     @Test fun interruptedJournalRetriesRemainingPairAndReportsActualPartialCounts() {
-        val receipt = publish(listOf(detail(), detail("resOriginalVidCompl")))
+        val receipt = publishLegacy(listOf(detail(), detail("resOriginalVidCompl")))
         val failed = MediaDeletion(root).delete(1, key(), afterUnlink = { error("simulated interruption") })
         assertEquals("FAILED", failed.status); assertEquals(1, failed.exportsDeleted)
         assertEquals(0L, Files.list(root.resolve("receipts")).use { it.count() })
@@ -77,7 +102,7 @@ class MediaDeletionTest {
         val retried = delete(); assertEquals("DELETED", retried.status); assertEquals(1, retried.exportsDeleted); assertEquals(2, retried.originalsDeleted)
     }
     @Test fun modifiedAndUnownedExportsSurviveAndConflictIsRetryable() {
-        val receipt = publish(listOf(detail())); val output = Path.of(receipt.outputs.single().path)
+        val receipt = publishLegacy(listOf(detail())); val output = Path.of(receipt.outputs.single().path)
         Files.write(output, jpeg + byteArrayOf(9))
         val foreign = directory.resolve("out/user.jpg"); Files.write(foreign, jpeg)
         val result = delete(); assertEquals("CONFLICT", result.status); assertEquals(0, result.exportsDeleted)
@@ -86,29 +111,29 @@ class MediaDeletionTest {
         assertFalse(Files.exists(output)); assertTrue(Files.exists(foreign))
     }
     @Test fun changedOriginalIsPreservedWhileOwnedExportIsRemoved() {
-        val receipt = publish(listOf(detail())); val archive = Path.of(receipt.outputs.single().archive)
+        val receipt = publishLegacy(listOf(detail())); val archive = Path.of(receipt.outputs.single().archive)
         Files.write(archive, jpeg + byteArrayOf(3))
         val result = delete(); assertEquals("CONFLICT", result.status); assertEquals(1, result.exportsDeleted); assertEquals(0, result.originalsDeleted)
         assertTrue(Files.exists(archive)); assertTrue(Files.exists(archive.resolveSibling("${archive.fileName}.json")))
     }
     @Test fun sharedReceiptReferencesDeferAndTwoDeletingTasksCanFinishWithoutCircularWait() {
-        val receipt = publish(listOf(detail())); publish(listOf(detail(task = 2)))
+        val receipt = publishLegacy(listOf(detail())); publishLegacy(listOf(detail(task = 2)))
         val first = delete(); assertEquals("DEFERRED", first.status); assertEquals(2, first.deferredFiles)
         assertTrue(Files.exists(Path.of(receipt.outputs.single().archive)))
         val second = delete(2); assertEquals("DELETED", second.status); assertEquals(1, second.exportsDeleted); assertEquals(1, second.originalsDeleted)
         assertEquals("DELETED", delete().status)
     }
     @Test fun retainedOtherLayoutKeepsItsExportAndSharedArchive() {
-        val first = publish(listOf(detail())); val retained = publish(listOf(detail(task = 2, out = "out-two")))
+        val first = publishLegacy(listOf(detail())); val retained = publishLegacy(listOf(detail(task = 2, out = "out-two")))
         val result = delete(); assertEquals("DEFERRED", result.status); assertEquals(1, result.exportsDeleted); assertEquals(1, result.deferredFiles)
         assertFalse(Files.exists(Path.of(first.outputs.single().path))); assertTrue(Files.exists(Path.of(retained.outputs.single().path)))
         assertTrue(Files.exists(Path.of(retained.outputs.single().archive)))
     }
     @Test fun changingOneTasksSelectedRolesCannotRemoveAnotherTasksCompanion() {
-        publish(listOf(detail(), detail("resOriginalVidCompl")))
-        val retained = publish(listOf(detail(task = 2), detail("resOriginalVidCompl", task = 2)))
+        publishLegacy(listOf(detail(), detail("resOriginalVidCompl")))
+        val retained = publishLegacy(listOf(detail(task = 2), detail("resOriginalVidCompl", task = 2)))
         val companion = Path.of(retained.outputs.first { it.resource.endsWith("/resOriginalVidCompl") }.path)
-        publish(listOf(detail()))
+        publishLegacy(listOf(detail()))
         assertTrue(Files.exists(companion), "another task still owns the Live Photo companion")
         assertEquals("DEFERRED", delete().status)
         assertTrue(Files.exists(companion))
@@ -116,18 +141,18 @@ class MediaDeletionTest {
         assertFalse(Files.exists(companion))
     }
     @Test fun symlinkAndEscapedPathsKeepTargets() {
-        val receipt = publish(listOf(detail())); val output = Path.of(receipt.outputs.single().path)
+        val receipt = publishLegacy(listOf(detail())); val output = Path.of(receipt.outputs.single().path)
         val foreign = directory.resolve("foreign.jpg"); Files.write(foreign, jpeg)
         Files.delete(output); Files.createSymbolicLink(output, foreign)
         assertEquals("CONFLICT", delete().status); assertTrue(Files.isSymbolicLink(output)); assertTrue(Files.exists(foreign))
         Files.delete(output)
-        val fresh = publish(listOf(detail()))
+        val fresh = publishLegacy(listOf(detail()))
         val receiptPath = Files.list(root.resolve("receipts")).use { it.findFirst().orElseThrow() }
         Files.writeString(receiptPath, mapper.writeValueAsString(fresh.copy(ownedPaths = listOf(foreign.toString()), ownedHashes = mapOf(foreign.toString() to fresh.outputs.single().outputSha256))))
         assertEquals("CONFLICT", delete().status); assertTrue(Files.exists(foreign))
     }
     @Test fun symlinkAncestorAndMalformedReceiptFailClosed() {
-        val receipt = publish(listOf(detail())); val parent = Path.of(receipt.outputs.single().path).parent
+        val receipt = publishLegacy(listOf(detail())); val parent = Path.of(receipt.outputs.single().path).parent
         val elsewhere = directory.resolve("elsewhere"); Files.move(parent, elsewhere); Files.createSymbolicLink(parent, elsewhere)
         assertEquals("CONFLICT", delete().status)
         assertTrue(Files.exists(elsewhere.resolve(Path.of(receipt.outputs.single().path).fileName)))
@@ -135,8 +160,8 @@ class MediaDeletionTest {
         assertEquals("CONFLICT", delete().status)
     }
     @Test fun restoreThenDeleteAgainMergesFreshReceiptsAndVersions() {
-        publish(listOf(detail())); assertEquals("DELETED", delete().status)
-        publish(listOf(detail(version = "v2"), detail("resOriginalVidCompl", version = "movie-v2")))
+        publishLegacy(listOf(detail())); assertEquals("DELETED", delete().status)
+        publishLegacy(listOf(detail(version = "v2"), detail("resOriginalVidCompl", version = "movie-v2")))
         assertEquals("RESTORED", MediaDeletion(root).delete(1, key(), stillDeleted = { false }).status); assertEquals(2L, countOriginals())
         val second = delete(); assertEquals("DELETED", second.status); assertEquals(2, second.exportsDeleted); assertEquals(2, second.originalsDeleted)
     }
@@ -152,12 +177,12 @@ class MediaDeletionTest {
             val deleting = pool.submit<MediaDeletionResult> { delete() }; assertFalse(deleting.isDone)
             release.countDown(); val receipt = publishing.get(5, TimeUnit.SECONDS)
             assertEquals("DELETED", deleting.get(5, TimeUnit.SECONDS).status)
-            assertFalse(Files.exists(Path.of(receipt.outputs.single().path))); assertFalse(Files.exists(Path.of(receipt.outputs.single().archive)))
+            assertFalse(Files.exists(Path.of(receipt.outputs.single().path))); assertTrue(receipt.outputs.single().archive.isEmpty())
         } finally { release.countDown(); pool.shutdownNow() }
     }
     @Test fun priorLayoutsAndLegacyFixedPrefixAreCleanedTogether() {
-        val first = publish(listOf(detail()))
-        val second = publish(listOf(detail(out = "new-layout")))
+        val first = publishLegacy(listOf(detail()))
+        val second = publishLegacy(listOf(detail(out = "new-layout")))
         val input = detail(out = "legacy")
         val legacy = MediaPublisher(root).publish("1/${key()}/1", directory.resolve("legacy").toString() + "/${'$'}{album}/file.jpg", "legacy", listOf(input),
             { _, path -> Files.write(path, jpeg); true }, { _, _ -> })
@@ -166,7 +191,7 @@ class MediaDeletionTest {
         assertTrue((first.outputs + second.outputs + legacy.outputs).all { !Files.exists(Path.of(it.path)) })
     }
     @Test fun unrelatedGroupAndUnownedOriginalBytesSurvive() {
-        val receipt = publish(listOf(detail()))
+        val receipt = publishLegacy(listOf(detail()))
         val unowned = root.resolve("originals/unowned.original"); Files.write(unowned, jpeg)
         assertEquals("DELETED", MediaDeletion(root).delete(1, "other-group").status)
         assertTrue(Files.exists(Path.of(receipt.outputs.single().path)))
@@ -175,7 +200,7 @@ class MediaDeletionTest {
         assertTrue(Files.exists(unowned))
     }
     @Test fun interruptionAfterOriginalUnlinkRetainsCountsAndRetriesMetadataRemoval() {
-        val receipt = publish(listOf(detail()))
+        val receipt = publishLegacy(listOf(detail()))
         val failed = MediaDeletion(root).delete(1, key(), afterUnlink = { path ->
             if (path.fileName.toString().endsWith(".original")) error("interrupted after original unlink")
         })
@@ -200,18 +225,18 @@ class MediaDeletionTest {
     }
 
     @Test fun missingSharedFilesAreIdempotentAndReceiptCanProveAnOriginalWithoutSidecar() {
-        val receipt = publish(listOf(detail())); publish(listOf(detail(task = 2)))
+        val receipt = publishLegacy(listOf(detail())); publishLegacy(listOf(detail(task = 2)))
         val output = receipt.outputs.single()
         Files.delete(Path.of(output.path)); Files.delete(Path.of(output.archive)); Files.delete(Path.of(output.archive + ".json"))
         assertEquals("DELETED", delete().status)
         assertEquals("DELETED", delete(2).status)
-        val restored = publish(listOf(detail(version = "new")))
+        val restored = publishLegacy(listOf(detail(version = "new")))
         Files.delete(Path.of(restored.outputs.single().archive + ".json"))
         assertEquals("DELETED", delete().status)
         assertFalse(Files.exists(Path.of(restored.outputs.single().archive)))
     }
     @Test fun failedPresenceRecheckPreservesFilesAndReportsFailure() {
-        val receipt = publish(listOf(detail()))
+        val receipt = publishLegacy(listOf(detail()))
         val result = MediaDeletion(root).delete(1, key(), stillDeleted = { error("database unavailable") })
         assertEquals("FAILED", result.status); assertEquals(0, result.exportsDeleted); assertEquals(0, result.originalsDeleted)
         assertTrue(Files.exists(Path.of(receipt.outputs.single().path))); assertTrue(Files.exists(Path.of(receipt.outputs.single().archive)))

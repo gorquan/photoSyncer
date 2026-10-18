@@ -546,7 +546,10 @@ watch(
                   <div
                     class="flex items-center gap-2 text-[13px] text-slate-600 dark:text-slate-300"
                   >
-                    <ToggleSwitch v-model="form.config.rewriteExifTime" />
+                    <ToggleSwitch
+                      v-model="form.config.rewriteExifTime"
+                      :disabled="!form.config.synologyPhotos"
+                    />
                     <span>{{ t('cronform.advanced.rewriteExifTime') }}</span>
                   </div>
                   <div class="text-[13px] text-slate-500 dark:text-slate-400">
@@ -588,7 +591,10 @@ watch(
                 </div>
               </div>
 
-              <div v-if="form.config.rewriteExifTime" class="space-y-2 mt-3">
+              <div
+                v-if="form.config.synologyPhotos && form.config.rewriteExifTime"
+                class="space-y-2 mt-3"
+              >
                 <label class="block text-[13px] font-medium text-slate-500 dark:text-slate-400">{{
                   t('cronform.advanced.exifTimeZone')
                 }}</label>

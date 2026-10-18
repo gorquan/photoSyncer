@@ -24,6 +24,8 @@ data class MediaDeletionResult(
     val conflicts: List<String> = emptyList(),
 )
 internal data class DeletionOutput(val path: String, val hash: String?, val layout: String)
+/** Read-only compatibility with archives written by older releases. New publications never create these. */
+internal data class ArchivedOriginal(val source: String, val sha256: String, val size: Long)
 internal data class DeletionOriginal(val source: String, val sha256: String, val size: Long)
 internal data class MediaDeletionJournal(
     val taskId: Long, val groupKey: String,
@@ -99,13 +101,13 @@ class MediaDeletion(private val root: Path) {
             if (mergedReceipts.any { receipt -> receipt.outputs.any {
                 !resourceBelongs(it.resource, groupKey) || !sourceBelongs(it.source, groupKey) ||
                     mapper.readTree(it.source)[0].asText() != it.resource || !validHash(it.originalSha256) ||
-                    normalized(it.archive) != absoluteRoot.resolve("originals/${hash(it.source)}.original")
+                    it.archive.isNotBlank() && normalized(it.archive) != absoluteRoot.resolve("originals/${hash(it.source)}.original")
             } }) {
                 conflicts += "发布凭证的资源归属不匹配，已保留文件"
                 return result("CONFLICT")
             }
             journal = journal.copy(receipts = mergedReceipts,
-                originals = (journal.originals + mergedReceipts.flatMap { receipt -> receipt.outputs.map {
+                originals = (journal.originals + mergedReceipts.flatMap { receipt -> receipt.outputs.filter { it.archive.isNotBlank() }.map {
                     DeletionOriginal(it.source, it.originalSha256, it.size)
                 } } + originals).associateBy { it.source }.values.toList(), complete = false)
             // New receipts/inventory are always merged, even after restore and another deletion.
@@ -113,7 +115,7 @@ class MediaDeletion(private val root: Path) {
             own.forEach { (path, _) -> Files.deleteIfExists(path) }
             val retainedPaths = retained.flatMap { it.ownedPaths + it.outputs.map { output -> output.path } }
                 .map { normalized(it) }.toSet()
-            val retainedArchives = retained.flatMap { it.outputs.map { output -> normalized(output.archive) } }.toSet()
+            val retainedArchives = retained.flatMap { it.outputs.filter { output -> output.archive.isNotBlank() }.map { output -> normalized(output.archive) } }.toSet()
             val outputs = journal.receipts.flatMap { receipt ->
                 (receipt.ownedPaths + receipt.outputs.map { it.path }).distinct().map { path ->
                     DeletionOutput(path, receipt.ownedHashes[path] ?: receipt.outputs.firstOrNull { it.path == path }?.outputSha256, receipt.layout)

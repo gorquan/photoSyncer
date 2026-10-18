@@ -404,7 +404,7 @@ const messages: typeof zh = {
       synologyPhotosHint:
         'On: use a fixed export root with provider, account and library folders. Apple Live Photo components share a basename; Xiaomi motion photos retain their original structure.',
       synologyPhotosOffHint:
-        'Off: use regular album paths or a path template. Switching does not move existing files; choose a new empty folder. HEIC / HEVC previews still depend on the NAS and client.',
+        'Off: preserve cloud-original bytes without EXIF filling; use regular album paths or a path template. Switching does not move existing files; choose a new empty folder. HEIC / HEVC previews still depend on the NAS and client.',
       downloadAudios: 'Download recordings',
       notify: 'Send notifications',
       enabled: 'Scheduled trigger',
@@ -430,7 +430,7 @@ const messages: typeof zh = {
         'Read changes from the previous sync cursor with resume support. The first sync or an invalid cursor builds a full baseline.',
       rewriteExifTime: 'Fill EXIF time',
       rewriteExifTimeHint:
-        'Writes the asset time recorded in the cloud into EXIF, only when the file has no EXIF time.',
+        'With Synology Photos compatibility on, fills the cloud capture time only when EXIF time is missing.',
       skipExistingFile: 'Skip existing files',
       skipExistingFileHint:
         'Skips the download if the target file already exists. Only applies when the save path already contains data.',

@@ -38,28 +38,37 @@ class MediaPublisherTest {
     private fun publish(details: List<CrontabHistoryDetail>, fingerprint: String = "v1", download: (Asset, Path) -> Boolean = { asset, path -> Files.write(path, if (asset.type == AssetType.VIDEO) mov else jpeg); true }, transform: (CrontabHistoryDetail, Path) -> Unit = { _, _ -> }) =
         MediaPublisher(directory.resolve("archive")).publish("group", directory.resolve("out").toString(), fingerprint, details, download, transform)
 
-    @Test fun completeGroupReusesRetainedOriginalsAndRepairsMissingOrCorruptOutput() {
+    private fun assertNoRetainedMedia() {
+        assertFalse(Files.exists(directory.resolve("archive/originals")))
+        val work = directory.resolve("archive/work")
+        if (Files.exists(work)) assertEquals(0L, Files.list(work).use { it.count() })
+    }
+
+    @Test fun completeGroupKeepsOnlyTargetsAndRedownloadsMissingOrCorruptOutput() {
         val pair = listOf(detail(), detail("resOriginalVidCompl"))
         var downloads = 0
         val download: (Asset, Path) -> Boolean = { asset, path -> downloads++; Files.write(path, if (asset.type == AssetType.VIDEO) mov else jpeg); true }
         val first = publish(pair, download = download)
         assertTrue(first.complete); assertEquals(2, downloads)
-        assertTrue(first.outputs.all { Files.isRegularFile(Path.of(it.archive)) })
+        assertTrue(first.outputs.all { it.archive.isEmpty() }); assertNoRetainedMedia()
         publish(pair, download = download); assertEquals(2, downloads)
         Files.delete(Path.of(pair[0].filePath)); Files.write(Path.of(pair[1].filePath), byteArrayOf(0))
         publish(pair, download = download)
-        assertEquals(2, downloads)
+        assertEquals(4, downloads)
+        assertNoRetainedMedia()
         assertArrayEquals(jpeg, Files.readAllBytes(Path.of(pair[0].filePath)))
         assertArrayEquals(mov, Files.readAllBytes(Path.of(pair[1].filePath)))
     }
 
-    @Test fun missingRequiredCompanionNeverPublishesPrimaryAndRetryReusesPrimaryArchive() {
+    @Test fun missingRequiredCompanionLeavesNoPrimaryOrRetainedDownloadAndRetryDownloadsBoth() {
         val pair = listOf(detail(), detail("resOriginalVidCompl"))
         assertThrows(IllegalArgumentException::class.java) { publish(pair, download = { asset, path -> if (asset.type == AssetType.VIDEO) false else { Files.write(path, jpeg); true } }) }
         assertFalse(Files.exists(Path.of(pair[0].filePath))); assertFalse(Files.exists(Path.of(pair[1].filePath)))
         var downloads = 0
-        publish(pair, download = { _, path -> downloads++; Files.write(path, mov); true })
-        assertEquals(1, downloads)
+        assertNoRetainedMedia()
+        publish(pair, download = { asset, path -> downloads++; Files.write(path, if (asset.type == AssetType.VIDEO) mov else jpeg); true })
+        assertEquals(2, downloads)
+        assertNoRetainedMedia()
     }
 
     @Test fun incompleteOrInvalidOriginalFailsEvenWhenSourceCheckDisabledAndKeepsPreviousExport() {
@@ -70,30 +79,35 @@ class MediaPublisherTest {
         assertThrows(IllegalArgumentException::class.java) { publish(listOf(replacement), "v2", download = { _, path -> Files.write(path, ByteArray(jpeg.size)); true }) }
     }
 
-    @Test fun copyOnExportKeepsOriginalAndSeparatesHashes() {
+    @Test fun transformedExportRetainsSourceDigestButNoSourceFile() {
         val result = publish(listOf(detail()), transform = { _, copy ->
             // A well formed APP15 segment changes bytes without damaging the JPEG structure.
             val changed = jpeg.take(2).toByteArray() + byteArrayOf(0xff.toByte(), 0xef.toByte(), 0, 3, 7) + jpeg.drop(2)
             Files.write(copy, changed)
         })
         val output = result.outputs.single()
-        assertArrayEquals(jpeg, Files.readAllBytes(Path.of(output.archive)))
+        assertEquals("", output.archive)
+        assertNoRetainedMedia()
         assertNotEquals(output.originalSha256, output.outputSha256)
     }
 
-    @Test fun configurationVersionChangeReprocessesWithoutDownloading() {
+    @Test fun configurationVersionChangeRedownloadsIntoTemporaryStorage() {
         val input = listOf(detail()); publish(input)
         var transforms = 0
-        publish(input, "new-time-settings", download = { _, _ -> fail("archive must be reused") }, transform = { _, _ -> transforms++ })
+        publish(input, "new-time-settings", download = { asset, path -> Files.write(path, if (asset.type == AssetType.VIDEO) mov else jpeg); true }, transform = { _, _ -> transforms++ })
         assertEquals(1, transforms)
     }
 
-    @Test fun corruptOrMissingArchiveCannotReuseSuccessfulReceipt() {
+    @Test fun legacyReceiptWithMissingArchiveReusesIntactTargetAndDropsArchiveReference() {
         val input = listOf(detail()); val first = publish(input)
-        Files.write(Path.of(first.outputs.single().archive), ByteArray(jpeg.size))
-        var downloads = 0
-        publish(input, download = { _, path -> downloads++; Files.write(path, jpeg); true })
-        assertEquals(1, downloads)
+        val receiptPath = Files.list(directory.resolve("archive/receipts")).use { it.findFirst().orElseThrow() }
+        val legacy = first.copy(outputs = first.outputs.map { it.copy(archive = directory.resolve("removed-legacy.original").toString()) })
+        Files.writeString(receiptPath, mapper.writeValueAsString(legacy))
+        val reused = publish(input, download = { _, _ -> fail("intact legacy export must not redownload") },
+            transform = { _, _ -> fail("intact legacy export must not transform") })
+        assertTrue(reused.outputs.all { it.archive.isEmpty() })
+        assertTrue(mapper.readTree(Files.readString(receiptPath)).path("outputs")[0].path("archive").asText().isEmpty())
+        assertNoRetainedMedia()
     }
 
     @Test fun partialPublicationPersistsPendingReceiptAndRepairsAfterRestart() {
@@ -104,7 +118,7 @@ class MediaPublisherTest {
         assertFalse(mapper.readTree(Files.readString(receipt)).path("complete").asBoolean())
         assertTrue(Files.isRegularFile(Path.of(pair[1].filePath)))
         Files.delete(Path.of(pair[0].filePath))
-        val repaired = publish(pair, download = { _, _ -> fail("archive must be reused") })
+        val repaired = publish(pair, download = { asset, path -> Files.write(path, if (asset.type == AssetType.VIDEO) mov else jpeg); true })
         assertTrue(repaired.complete)
     }
 
@@ -116,7 +130,7 @@ class MediaPublisherTest {
         assertFalse(Files.exists(Path.of(pair[0].filePath)))
         assertFalse(Files.exists(Path.of(pair[1].filePath)))
         assertTrue(Files.exists(unowned)); assertTrue(Files.exists(Path.of(changed.filePath)))
-        assertEquals(3, Files.list(directory.resolve("archive/originals")).use { paths -> paths.filter { it.fileName.toString().endsWith(".original") }.count() })
+        assertNoRetainedMedia()
     }
 
     @Test fun externallyModifiedObsoleteOwnedExportIsPreservedAndReported() {
@@ -141,14 +155,14 @@ class MediaPublisherTest {
         assertEquals(Instant.EPOCH, Files.getLastModifiedTime(path).toInstant())
         Files.setLastModifiedTime(path, java.nio.file.attribute.FileTime.from(Instant.now()))
         var transforms = 0
-        publish(listOf(timed), download = { _, _ -> fail("archive must be reused") }, transform = { item, copy ->
+        publish(listOf(timed), download = { asset, path -> Files.write(path, if (asset.type == AssetType.VIDEO) mov else jpeg); true }, transform = { item, copy ->
             transforms++; rewriteFSTime(copy, item.asset.dateTaken)
         })
         assertEquals(1, transforms)
         assertEquals(Instant.EPOCH, Files.getLastModifiedTime(path).toInstant())
     }
 
-    @Test fun disablingSkipExistingForcesExportProcessingButReusesValidatedOriginal() {
+    @Test fun disablingSkipExistingForcesNewTemporaryDownloadAndProcessing() {
         val base = detail()
         val forced = CrontabHistoryDetail(base) {
             crontabHistory = CrontabHistory(base.crontabHistory) {
@@ -157,7 +171,7 @@ class MediaPublisherTest {
         }
         publish(listOf(forced))
         var transforms = 0
-        publish(listOf(forced), download = { _, _ -> fail("archive must be reused") }, transform = { _, _ -> transforms++ })
+        publish(listOf(forced), download = { asset, path -> Files.write(path, if (asset.type == AssetType.VIDEO) mov else jpeg); true }, transform = { _, _ -> transforms++ })
         assertEquals(1, transforms)
     }
 
@@ -236,10 +250,7 @@ class MediaPublisherTest {
         assertEquals("deleted during download", failure.message)
         assertFalse(Files.exists(Path.of(input.filePath)))
         assertFalse(Files.exists(directory.resolve("archive/receipts")))
-        // A validated original remains available for retry or confirmed deletion cleanup.
-        assertEquals(1L, Files.list(directory.resolve("archive/originals")).use { paths ->
-            paths.filter { it.fileName.toString().endsWith(".original") }.count()
-        })
+        assertNoRetainedMedia()
     }
 
     @Test fun receiptReuseAlsoRechecksPresence() {
