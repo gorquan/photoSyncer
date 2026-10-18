@@ -21,140 +21,117 @@ import java.time.Instant
 class CloudDeletionServiceTest {
     @TempDir lateinit var directory: Path
 
-    @Test fun pendingDeletionRechecksRestoreEvenAfterSelectedZoneChanged() = withStore { store -> with(store) {
-        val row = media.saveAssets(listOf(resource(albums[0], "A"))).single()
-        addHistory(row)
-        stream(mapOf("record" to CloudPresence.DELETED))
-        val deselected = Crontab(job) { albumIds = emptyList() }
-        var probes = 0
-        val restored = deletion.confirmPending(deselected) { probes++; CloudPresence.LIVE }
-        assertEquals(1, probes)
-        assertEquals(1, restored.restoredGroups)
-        assertTrue(deletion.deletedGroups(deselected).isEmpty())
-    } }
-
-    @Test fun concurrentAccountUpdateCannotCommitStaleDeletionPage() = withStore { store -> with(store) {
+    @Test fun missingInventoryNeverDeletesOrPublishesMirrorButBackupRemainsEligible() = withStore { store -> with(store) {
         media.saveAssets(listOf(resource(albums[0], "A")))
-        val history = sql.saveCommand(CrontabHistory { crontab = job; startTime = Instant.EPOCH; endTime = null; fetchedAllAssets = false; syncCursors = null; timelineSnapshot = null }, SaveMode.INSERT_ONLY).execute().modifiedEntity
-        val before = media.observationRevision(job.accountId)
-        media.saveAssets(listOf(resource(albums[0], "B")))
-        assertThrows(IllegalArgumentException::class.java) {
-            assets.commitICloudPage(job, history, "key", mutableMapOf(), ICloudChangePage("PrimarySync", "after", emptyList(), mapOf("record" to CloudPresence.DELETED)), deletion, before) {}
-        }
-        assertTrue(allAssets().none { it.cloudDeleted })
-        assertNull(sql.findById(CrontabHistory::class, history.id)!!.syncCursors)
+        assertTrue(deletion.deletedGroups(job).isEmpty())
+        assertTrue(assets.getAssetsUndownloadByCrontab(job, 50, 0, true).isEmpty())
+        sql.executeUpdate(Asset::class) { set(table.cloudDeleted, true) }
+        val backup = Crontab(job) { config = job.config.copy(syncCloudDeletes = false) }
+        assertEquals(1, assets.getAssetsUndownloadByCrontab(backup, 50, 0, true).size)
     } }
 
-    @Test fun incompleteScanAndFinalFailedProbeChangeNoPresence() = withStore { store ->
-        with(store) {
-            media.saveAssets(listOf(resource(albums[0], "A", "first"), resource(albums[0], "B", "second")))
-            assertThrows(IllegalStateException::class.java) {
-                deletion.reconcile(job, { _, _ -> error("interrupted final page") }, { fail<CloudPresence>("must not probe") })
-            }
-            var probes = 0
-            assertThrows(IllegalStateException::class.java) {
-                deletion.reconcile(job, { _, _ -> Unit }, {
-                    if (++probes == 1) CloudPresence.DELETED else error("authorization expired")
-                })
-            }
-            assertEquals(2, probes)
-            assertTrue(allAssets().none { it.cloudDeleted })
-            assertTrue(deletion.deletedGroups(job).isEmpty())
-        }
-    }
+    @Test fun selectedAlbumUnionControlsPresenceRegardlessOfOtherCloudMemberships() = withStore { store -> with(store) {
+        media.saveAssets(listOf(resource(albums[0], "A"), resource(albums[1], "A"), resource(albums[2], "A")))
+        val key = key("record")
+        snapshot(mapOf(albums[0].id to setOf(key)))
+        assertTrue(deletion.deletedGroups(job).isEmpty())
+        assertEquals(listOf(albums[0].id), assets.getAssetsUndownloadByCrontab(job, 50, 0, true).map { it.album.id })
+        snapshot(mapOf(albums[1].id to setOf(key)))
+        assertTrue(deletion.deletedGroups(job).isEmpty())
+        val result = snapshot()
+        assertEquals(1, result.newlyDeletedGroups)
+        assertEquals(2, result.deletedGroups.single().assets.size)
+        assertTrue(allAssets().none { it.cloudDeleted })
+        assertTrue(assets.getAssetsUndownloadByCrontab(job, 50, 0, true).isEmpty())
+        assertEquals(1, snapshot(mapOf(albums[0].id to setOf(key))).restoredGroups)
+    } }
 
-    @Test fun baselineAndStreamDeleteAllComponentsVersionsAndMemberships() = withStore { store -> with(store) {
+    @Test fun allRolesAndHistoricalVersionsAreAbsentTogetherWithoutChangingSourceVersions() = withStore { store -> with(store) {
         media.saveAssets(listOf(resource(albums[0], "A"), resource(albums[1], "A"),
             resource(albums[0], "movie", role = "resOriginalVidCompl"), resource(albums[0], "alt", role = "resOriginalAlt")))
         media.saveAssets(listOf(resource(albums[0], "B")))
         val current = allAssets().associate { it.id to it.currentVersion }
-        val result = baseline { CloudPresence.DELETED }
-        assertEquals(1, result.newlyDeletedGroups)
-        assertEquals(5, result.deletedGroups.single().assets.size)
-        assertTrue(allAssets().all { it.cloudDeleted })
+        assertEquals(5, snapshot().deletedGroups.single().assets.size)
         assertEquals(current, allAssets().associate { it.id to it.currentVersion })
-        assertTrue(assets.getAssetsUndownloadByCrontab(job, 50, 0, true).isEmpty())
-        assertEquals(0, baseline { CloudPresence.DELETED }.newlyDeletedGroups)
-        assertEquals(1, stream(mapOf("record" to CloudPresence.LIVE)).restoredGroups)
-        assertTrue(allAssets().none { it.cloudDeleted })
-        assertTrue(allAssets().filter { it.checksum == "A" }.none { it.currentVersion })
-        assertEquals(1, stream(mapOf("record" to CloudPresence.DELETED)).newlyDeletedGroups)
+        assertEquals(0, snapshot().newlyDeletedGroups)
+        assertEquals(1, stream(mapOf("record" to setOf(albums[0].id))).restoredGroups)
+        assertEquals(setOf("B", "movie", "alt"), assets.getAssetsUndownloadByCrontab(job, 50, 0, true).map { it.checksum }.toSet())
     } }
 
-    @Test fun baselineObservationsAndCurrentLibraryPresencePreserveMovedPhotos() = withStore { store -> with(store) {
-        media.saveAssets(listOf(resource(albums[0], "A"), resource(albums[1], "A"), resource(albums[0], "B", "moved")))
-        val probes = mutableListOf<String>()
-        val result = deletion.reconcileBaseline(job, "PrimarySync", setOf("record")) {
-            probes += it.record; CloudPresence.LIVE
-        }
-        assertEquals(listOf("moved"), probes)
-        assertTrue(result.deletedGroups.isEmpty())
-        assertTrue(allAssets().none { it.cloudDeleted })
-    } }
-
-    @Test fun failedLastProbeAndConcurrentObservationDoNotCommitPartialDeletion() = withStore { store -> with(store) {
-        media.saveAssets(listOf(resource(albums[0], "A", "first"), resource(albums[0], "B", "second")))
-        var probes = 0
-        assertThrows(IllegalStateException::class.java) { baseline {
-            if (++probes == 1) CloudPresence.DELETED else error("authorization expired")
+    @Test fun invalidScopeAndFailedTransactionPreserveLastCompleteInventory() = withStore { store -> with(store) {
+        media.saveAssets(listOf(resource(albums[0], "A")))
+        snapshot(mapOf(albums[0].id to setOf(key("record"))))
+        val before = deletion.inventory(job)
+        assertThrows(IllegalArgumentException::class.java) { deletion.replaceSnapshot(job, emptyMap()) }
+        assertThrows(IllegalStateException::class.java) { sql.transaction {
+            deletion.replaceSnapshot(job, albums.take(2).associate { it.id to emptySet<String>() })
+            error("interrupted commit")
         } }
-        assertTrue(allAssets().none { it.cloudDeleted })
-        assertThrows(IllegalArgumentException::class.java) { baseline {
-            media.saveAssets(listOf(resource(albums[0], "C", "first"))); CloudPresence.DELETED
-        } }
-        assertTrue(allAssets().none { it.cloudDeleted })
+        assertEquals(before, deletion.inventory(job))
+        assertTrue(deletion.deletedGroups(job).isEmpty())
     } }
 
-    @Test fun scopeIncludesHistoryAndAllMembershipsButIsolatesAccountsAndZones() = withStore { store -> with(store) {
+    @Test fun removedAlbumHistoriesRemainInCleanupScopeAndAccountsAndZonesStaySeparate() = withStore { store -> with(store) {
         val historical = media.saveAssets(listOf(resource(albums[1], "A"))).single()
         addHistory(historical)
         media.saveAssets(listOf(resource(albums[2], "B")))
         val other = sql.saveCommand(ProviderAccount { nickname = "other"; provider = CloudProvider.ICLOUD; userId = "other"; credentials = "{}" }, SaveMode.INSERT_ONLY).execute().modifiedEntity
         val otherAlbum = sql.saveCommand(Album { accountId = other.id; remoteKey = albums[0].remoteKey; name = "other"; shadow = false; assetCount = null; lastUpdateTime = null }, SaveMode.INSERT_ONLY).execute().modifiedEntity
-        val otherAsset = media.saveAssets(listOf(resource(otherAlbum, "A"))).single()
+        media.saveAssets(listOf(resource(otherAlbum, "A")))
         val sharedAlbum = sql.saveCommand(Album { accountId = job.accountId; remoteKey = ICloudAlbumKey("SharedSync-example", "album").encode(); name = "shared"; shadow = false; assetCount = null; lastUpdateTime = null }, SaveMode.INSERT_ONLY).execute().modifiedEntity
         val shared = media.saveAssets(listOf(resource(sharedAlbum, "A"))).single()
         addHistory(shared)
         val selected = Crontab(job) { albumIds = listOf(albums[0].id) }
-        val result = sql.transaction { deletion.applyStates(selected, "PrimarySync", mapOf("record" to CloudPresence.DELETED)) }
-        assertEquals(2, result.deletedGroups.single().assets.size)
-        assertFalse(sql.findById(Asset::class, otherAsset.id)!!.cloudDeleted)
-        assertFalse(sql.findById(Asset::class, shared.id)!!.cloudDeleted)
+        sql.transaction { deletion.replaceSnapshot(selected, mapOf(albums[0].id to setOf(key("record")))) }
+        assertEquals(listOf("SharedSync-example"), deletion.deletedGroups(selected).map { it.identity.zone })
+        sql.transaction { deletion.replaceSnapshot(selected, mapOf(albums[0].id to emptySet())) }
+        assertEquals(setOf("PrimarySync", "SharedSync-example"), deletion.deletedGroups(selected).map { it.identity.zone }.toSet())
     } }
 
-    @Test fun legacyIdentityRowsAndRestorationsOutsideSelectedAlbumsAreHandled() = withStore { store -> with(store) {
-        media.saveAssets(listOf(resource(albums[0], "A"), resource(albums[1], "A")))
-        sql.executeUpdate(Asset::class) { set(table.logicalResourceKey, "") }
-        baseline { CloudPresence.DELETED }
-        assertTrue(allAssets().all { it.cloudDeleted })
-        assertEquals(1, baseline { CloudPresence.LIVE }.restoredGroups)
-        assertTrue(allAssets().none { it.cloudDeleted })
-        baseline { CloudPresence.DELETED }
-        media.saveAssets(listOf(resource(albums[1], "C")))
-        assertTrue(allAssets().none { it.cloudDeleted })
-        assertEquals(listOf("C"), assets.getAssetsUndownloadByCrontab(job, 50, 0, true).map { it.checksum })
+    @Test fun cursorUpdatesSelectedMembershipAndKeepsUnchangedRecords() = withStore { store -> with(store) {
+        media.saveAssets(listOf(resource(albums[0], "A"), resource(albums[0], "B", "unchanged")))
+        snapshot(mapOf(albums[0].id to setOf(key("record"), key("unchanged"))))
+        assertEquals(1, stream(mapOf("record" to emptySet())).newlyDeletedGroups)
+        assertEquals(setOf(key("unchanged")), deletion.inventory(job)!!.albums.getValue(albums[0].id))
+        assertEquals(1, stream(mapOf("record" to setOf(albums[1].id))).restoredGroups)
+        assertTrue(deletion.deletedGroups(job).isEmpty())
     } }
 
-    @Test fun pageFailureRollsBackPresenceAssetsAndCursorAndRetryIsIdempotent() = withStore { store -> with(store) {
+    @Test fun concurrentAccountUpdateCannotCommitStaleDeletionPage() = withStore { store -> with(store) {
         media.saveAssets(listOf(resource(albums[0], "A")))
-        val history = sql.saveCommand(CrontabHistory { crontab = job; startTime = Instant.EPOCH; endTime = null; fetchedAllAssets = false; syncCursors = mapOf("key" to "before"); timelineSnapshot = null }, SaveMode.INSERT_ONLY).execute().modifiedEntity
+        snapshot(mapOf(albums[0].id to setOf(key("record"))))
+        val history = newHistory()
+        val before = media.observationRevision(job.accountId)
+        media.saveAssets(listOf(resource(albums[0], "B")))
+        assertThrows(IllegalArgumentException::class.java) {
+            assets.commitICloudPage(job, history, "key", mutableMapOf(), ICloudChangePage("PrimarySync", "after", emptyList(), mapOf("record" to CloudPresence.DELETED)), deletion, before) {}
+        }
+        assertTrue(deletion.deletedGroups(job).isEmpty())
+        assertNull(sql.findById(CrontabHistory::class, history.id)!!.syncCursors)
+    } }
+
+    @Test fun pageFailureRollsBackInventoryAssetsReportAndCursorAndRetryIsIdempotent() = withStore { store -> with(store) {
+        media.saveAssets(listOf(resource(albums[0], "A")))
+        snapshot(mapOf(albums[0].id to setOf(key("record"))))
+        val history = newHistory(mapOf("key" to "before"))
         val cursors = mutableMapOf("key" to "before")
         val page = ICloudChangePage("PrimarySync", "after", listOf(resource(albums[0], "new", "new")), mapOf("record" to CloudPresence.DELETED))
         source.connection.use { connection -> connection.createStatement().use {
             it.execute("CREATE TRIGGER fail_cursor BEFORE UPDATE OF album_sync_cursors ON crontab_history BEGIN SELECT RAISE(ABORT, 'checkpoint failure'); END")
         } }
         assertThrows(RuntimeException::class.java) {
-            assets.commitICloudPage(job, history, "key", cursors, page, deletion) {}
+            assets.commitICloudPage(job, history, "key", cursors, page, deletion) { CrontabService(sql).accumulateDeletionReport(history, it) }
         }
         source.connection.use { connection -> connection.createStatement().use { it.execute("DROP TRIGGER fail_cursor") } }
         assertEquals(mapOf("key" to "before"), cursors)
         assertEquals(mapOf("key" to "before"), sql.findById(CrontabHistory::class, history.id)!!.syncCursors)
         assertEquals(1, allAssets().size)
-        assertFalse(allAssets().single().cloudDeleted)
+        assertTrue(deletion.deletedGroups(job).isEmpty())
+        assertEquals(0, sql.findById(CrontabHistory::class, history.id)!!.deletionReport?.newlyDeletedGroups ?: 0)
         assets.commitICloudPage(job, history, "key", cursors, page, deletion) {}
         assertEquals("after", cursors["key"])
         assertEquals("after", sql.findById(CrontabHistory::class, history.id)!!.syncCursors!!["key"])
-        assertTrue(allAssets().first { it.checksum == "A" }.cloudDeleted)
+        assertEquals(listOf(key("record")), deletion.deletedGroups(job).map { it.groupKey })
         assertEquals(2, allAssets().size)
         assets.commitICloudPage(job, history, "key", cursors, page, deletion) {}
         assertEquals(2, allAssets().size)
@@ -166,7 +143,6 @@ class CloudDeletionServiceTest {
         assertFalse(deletion.enabled(cursor))
         assertTrue(deletion.enabled(job))
         assertTrue(deletion.enabled(Crontab(job) { syncMode = CrontabSyncMode.TIMELINE }))
-        assertEquals(CloudDeletionResult(), baseline { fail<CloudPresence>("Xiaomi must not probe") })
         assertTrue(deletion.deletedGroups(cursor).isEmpty())
         assertThrows(com.coooolfan.xiaomialbumsyncer.exception.BadRequestException::class.java) { CrontabService(sql).validateSyncConfig(job.accountId, CrontabSyncMode.CURSOR, job.config) }
         assertTrue(MediaDeletionService(sql).cleanup(cursor, emptyList()).isEmpty())
@@ -175,40 +151,22 @@ class CloudDeletionServiceTest {
             CrontabService(sql).validateSyncConfig(job.accountId, mode, job.config)
     } }
 
-    @Test fun persistedTombstoneCannotBypassAuthenticationOrNetworkFailure() = withStore { store ->
-        with(store) {
-            media.saveAssets(listOf(resource(albums[0], "A")))
-            deletion.reconcile(job, { _, _ -> Unit }, { CloudPresence.DELETED })
-            assertThrows(IllegalStateException::class.java) {
-                deletion.reconcile(job, { _, _ -> Unit }, { error("authorization expired") })
-            }
-            assertTrue(allAssets().all { it.cloudDeleted })
-        }
-    }
+    @Test fun audioKeepsBackupBehaviorAndClearingHistoryResetsMirrorBaseline() = withStore { store -> with(store) {
+        media.saveAssets(listOf(resource(albums[0], "A"), Asset(resource(albums[0], "audio", "audio")) { type = AssetType.AUDIO }))
+        snapshot()
+        assertEquals(listOf("audio"), assets.getAssetsUndownloadByCrontab(job, 50, 0, true).map { it.checksum })
+        snapshot(mapOf(albums[0].id to setOf(key("record"))))
+        assertTrue(mirrorContains(sql, job.id, albums[0].id, key("record")))
+        CrontabService(sql).clearCrontabHistory(job.id)
+        assertNull(deletion.inventory(job))
+        assertFalse(mirrorContains(sql, job.id, albums[0].id, key("record")))
+        assertTrue(deletion.deletedGroups(job).isEmpty())
+    } }
 
-    @Test fun xiaomiUncertainStorageOnlyRetainsAnAlreadyConfirmedDeletion() = withStore { store ->
-        with(store) {
-            sql.executeUpdate(ProviderAccount::class) { set(table.provider, CloudProvider.XIAOMI) }
-            media.saveAssets(listOf(Asset(resource(albums[0], "A")) { remoteKey = "42" }))
-            assertThrows(XiaomiGalleryPresenceUncertain::class.java) {
-                deletion.reconcile(job, { _, _ -> Unit }, { throw XiaomiGalleryPresenceUncertain() })
-            }
-            assertTrue(allAssets().none { it.cloudDeleted })
-            deletion.reconcile(job, { _, _ -> Unit }, { CloudPresence.DELETED })
-            assertEquals(1, deletion.reconcile(job, { _, _ -> Unit }, { throw XiaomiGalleryPresenceUncertain() }).deletedGroups.size)
-            assertEquals(1, deletion.reconcile(job, { _, _ -> Unit }, { CloudPresence.LIVE }).restoredGroups)
-            assertTrue(allAssets().none { it.cloudDeleted })
-        }
-    }
-
-    @Test fun backupDoesNotConsumeDeletionAndOldConfigDefaultsToBackup() = withStore { store -> with(store) {
-        media.saveAssets(listOf(resource(albums[0], "A")))
-        val disabled = Crontab(job) { config = job.config.copy(syncCloudDeletes = false) }
-        assertEquals(CloudDeletionResult(), deletion.reconcileBaseline(disabled, "PrimarySync", emptySet()) { fail<CloudPresence>("backup must not probe") })
-        assertFalse(allAssets().single().cloudDeleted)
+    @Test fun oldConfigDefaultsToBackup() {
         val old = jacksonObjectMapper().readValue<CrontabConfig>("""{"expression":"0 0 * * * ?","timeZone":"UTC","targetPath":"/out","downloadImages":true,"downloadVideos":true,"rewriteExifTime":false,"rewriteExifTimeZone":null}""")
         assertFalse(old.syncCloudDeletes)
-    } }
+    }
 
     private fun resource(album: Album, checksum: String, record: String = "record", role: String = "resOriginal") = Asset {
         albumId = album.id; remoteKey = ICloudResourceKey(record, role).encode()
@@ -220,9 +178,16 @@ class CloudDeletionServiceTest {
 
     private class Store(val source: HikariDataSource, val sql: KSqlClient, val media: CloudMediaService, val assets: AssetService,
         val deletion: CloudDeletionService, val albums: List<Album>, val job: Crontab) {
-        fun baseline(probe: (com.coooolfan.xiaomialbumsyncer.utils.MediaIdentity) -> CloudPresence) =
-            deletion.reconcileBaseline(job, "PrimarySync", emptySet(), probe)
-        fun stream(states: Map<String, CloudPresence>) = sql.transaction { deletion.applyStates(job, "PrimarySync", states) }
+        fun key(record: String) = com.coooolfan.xiaomialbumsyncer.utils.MediaIdentity(job.accountId, CloudProvider.ICLOUD, "PrimarySync", record, "").groupKey
+        fun snapshot(values: Map<Long, Set<String>> = emptyMap()) = sql.transaction {
+            deletion.replaceSnapshot(job, albums.take(2).associate { it.id to values[it.id].orEmpty() })
+        }
+        fun stream(scopes: Map<String, Set<Long>>) = sql.transaction {
+            deletion.applyPage(job, ICloudChangePage("PrimarySync", "next", emptyList(), emptyMap(), scopes))
+        }
+        fun newHistory(cursors: Map<String, String>? = null) = sql.saveCommand(CrontabHistory {
+            crontab = job; startTime = Instant.EPOCH; endTime = null; fetchedAllAssets = false; syncCursors = cursors; timelineSnapshot = null
+        }, SaveMode.INSERT_ONLY).execute().modifiedEntity
         fun allAssets(): List<Asset> = sql.executeQuery(Asset::class) {
             orderBy(table.id.asc()); select(table.fetchBy { allScalarFields(); album { allScalarFields(); account { provider() } } })
         }
@@ -258,7 +223,7 @@ class CloudDeletionServiceTest {
                     synologyPhotos = true, syncCloudDeletes = true)
             }, SaveMode.INSERT_ONLY).execute().modifiedEntity
             val job = Crontab(task) { albumIds = albums.take(2).map { it.id } }
-            action(Store(source, sql, media, AssetService(sql, xiaomi, media, icloud), CloudDeletionService(sql, xiaomi, icloud, media), albums, job))
+            action(Store(source, sql, media, AssetService(sql, xiaomi, media, icloud), CloudDeletionService(sql, media), albums, job))
         }
     }
 }

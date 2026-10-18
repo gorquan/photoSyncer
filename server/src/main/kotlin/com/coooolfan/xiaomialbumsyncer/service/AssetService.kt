@@ -4,6 +4,7 @@ import com.coooolfan.xiaomialbumsyncer.model.*
 import com.coooolfan.xiaomialbumsyncer.icloud.ICloudAlbumKey
 import com.coooolfan.xiaomialbumsyncer.icloud.ICloudPhotos
 import com.coooolfan.xiaomialbumsyncer.utils.isAudioAlbum
+import com.coooolfan.xiaomialbumsyncer.utils.MediaIdentity
 import com.coooolfan.xiaomialbumsyncer.xiaomicloud.AlbumSyncInfo
 import com.coooolfan.xiaomialbumsyncer.xiaomicloud.XiaoMiApi
 import kotlinx.coroutines.Dispatchers
@@ -180,24 +181,99 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
         }
     }
 
+    /** Full and timeline mirrors publish only a complete, task-selected cloud inventory. */
+    fun refreshMirrorInventory(crontab: Crontab, history: CrontabHistory, deletion: CloudDeletionService): CloudDeletionResult {
+        val albums = sql.executeQuery(Album::class) {
+            where(table.id valueIn crontab.albumIds)
+            where(table.accountId eq crontab.accountId)
+            select(table.fetchBy { allScalarFields(); account { provider() } })
+        }
+        require(albums.size == crontab.albumIds.distinct().size) { "镜像相册范围不完整，本次保留文件" }
+        val gallery = albums.filterNot { it.isAudioAlbum() }
+        val timeline = if (crontab.syncMode == CrontabSyncMode.TIMELINE)
+            fetchAlbumsTimelineSnapshot(crontab.accountId, gallery) else null
+        val previous = deletion.inventory(crontab)
+        val observed = java.util.concurrent.ConcurrentHashMap<Long, Set<String>>()
+        runBlocking(Dispatchers.IO) {
+            val semaphore = Semaphore(5)
+            albums.map { album -> async { semaphore.withPermit {
+                if (album.isAudioAlbum()) {
+                    refreshAlbumFull(album)
+                } else {
+                    val remote = album.remoteKey.toLongOrNull()
+                    val latest = timeline?.get(remote)
+                    val before = previous?.timeline?.get(remote)
+                    val retained = previous?.albums?.get(album.id)
+                    if (latest != null && before != null && retained != null && latest.indexHash == before.indexHash) {
+                        observed[album.id] = retained
+                    } else {
+                        val groups = mutableSetOf<String>()
+                        fun save(rows: List<Asset>) {
+                            require(rows.all { it.album.id == album.id }) { "镜像分页返回其他相册的资源" }
+                            groups += rows.map { MediaIdentity.of(Asset(it) { this.album = album }).groupKey }
+                            media.saveAssets(rows, authoritativeAppleRoles = media.isICloud(crontab.accountId))
+                        }
+                        if (latest != null && before != null && retained != null) {
+                            // Hash changes require every current nonempty day, even when counts stayed equal.
+                            for (day in latest.daysToRefreshSince(before))
+                                api.fetchAssetsByAlbumId(album, day, strict = true, handler = ::save)
+                        } else if (media.isICloud(crontab.accountId)) {
+                            icloud.fetchAssetsForMirror(album, ::save)
+                        } else {
+                            api.fetchAssetsByAlbumId(album, strict = true, handler = ::save)
+                        }
+                        if (latest != null) require(groups.size.toLong() == latest.dayCount.values.sum()) {
+                            "小米镜像清单数量与时间线不一致，请重试；本次保留文件"
+                        }
+                        observed[album.id] = groups.toSet()
+                    }
+                }
+            } } }.awaitAll()
+        }
+        return sql.transaction {
+            val result = deletion.replaceSnapshot(crontab, observed.toMap(), timeline)
+            observed.forEach { (albumId, groups) -> sql.executeUpdate(Album::class) {
+                set(table.assetCount, groups.size.toLong())
+                where(table.id eq albumId)
+            } }
+            if (timeline != null) sql.executeUpdate(CrontabHistory::class) {
+                set(table.timelineSnapshot, timeline)
+                where(table.id eq history.id)
+            }
+            result
+        }
+    }
+
     fun refreshICloudAssetsByCursor(
         crontab: Crontab, history: CrontabHistory, baseline: Map<String, String>,
         deletion: CloudDeletionService? = null, recordDeletion: (CloudDeletionResult) -> Unit = {},
     ): Boolean {
+        if (deletion == null) {
+            refreshICloudBackupByCursor(crontab, history, baseline)
+            return false
+        }
         val albums = crontabAlbums(crontab)
         refreshICloudAlbumCounts(albums)
-        val mirror = deletion?.enabled(crontab) == true
         val cursors = baseline.toMutableMap()
+        val snapshot = deletion.inventory(crontab)
+        val scopeMatches = snapshot?.albums?.keys == albums.map { it.id }.toSet()
         var allEstablished = true
         for ((zone, selected) in albums.groupBy { ICloudAlbumKey.decode(it.remoteKey).zone }) {
-            // Mirror needs its own baseline because backup cursors ignored deletion events.
-            val key = "icloud:${crontab.accountId}:$zone:${selected.map { it.id }.sorted().joinToString(",")}" +
-                if (mirror) ":mirror-v1" else ""
+            val key = "icloud:${crontab.accountId}:$zone:${selected.map { it.id }.sorted().joinToString(",")}:mirror-v2"
+            val observed = selected.associate { it.id to mutableSetOf<String>() }
             var revision = media.observationRevision(crontab.accountId)
-            val established = icloud.fetchIncrementalPages(selected, baseline[key], mirror,
-                saveBaseline = { media.saveAssets(it, authoritativeAppleRoles = true) },
-                baselineReady = { observed ->
-                    if (mirror) recordDeletion(requireNotNull(deletion).reconcileBaseline(crontab, zone, observed))
+            val established = icloud.fetchIncrementalPages(selected, if (scopeMatches) baseline[key] else null, true,
+                saveBaseline = { rows ->
+                    rows.forEach { row -> observed.getValue(row.album.id) += MediaIdentity(crontab.accountId,
+                        CloudProvider.ICLOUD, zone, com.coooolfan.xiaomialbumsyncer.icloud.ICloudResourceKey.decode(row.remoteKey).assetId, "").groupKey }
+                    media.saveAssets(rows, authoritativeAppleRoles = true)
+                },
+                baselineReady = {
+                    sql.transaction {
+                        val current = deletion.inventory(crontab)?.albums.orEmpty().filterKeys { id -> id in crontab.albumIds }
+                        val complete = albums.associate { it.id to current[it.id].orEmpty() } + observed.mapValues { it.value.toSet() }
+                        recordDeletion(deletion.replaceSnapshot(crontab, complete, zone = zone))
+                    }
                 },
                 beforePage = { revision = media.observationRevision(crontab.accountId) },
                 consume = { page -> commitICloudPage(crontab, history, key, cursors, page, deletion, revision, recordDeletion) },
@@ -205,6 +281,23 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
             allEstablished = allEstablished && established
         }
         return allEstablished
+    }
+
+    private fun refreshICloudBackupByCursor(crontab: Crontab, history: CrontabHistory, baseline: Map<String, String>) {
+        val albums = crontabAlbums(crontab)
+        refreshICloudAlbumCounts(albums)
+        val cursors = baseline.toMutableMap()
+        for ((zone, selected) in albums.groupBy { ICloudAlbumKey.decode(it.remoteKey).zone }) {
+            // 相册范围改变后建立新基线；账号之间、任务之间不共享同步进度。
+            val key = "icloud:${crontab.accountId}:$zone:${selected.map { it.id }.sorted().joinToString(",")}"
+            icloud.fetchIncremental(selected, baseline[key], { media.saveAssets(it, authoritativeAppleRoles = true) }) { token ->
+                cursors[key] = token
+                sql.executeUpdate(CrontabHistory::class) {
+                    set(table.syncCursors, cursors.toMap())
+                    where(table.id eq history.id)
+                }
+            }
+        }
     }
 
     internal fun commitICloudPage(
@@ -219,7 +312,7 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
             }
             sql.transaction {
                 // Apply presence first so restoration counts retain the previous tombstone state.
-                if (deletion?.enabled(crontab) == true) recordDeletion(deletion.applyStates(crontab, page.zone, page.presence))
+                if (deletion?.enabled(crontab) == true) recordDeletion(deletion.applyPage(crontab, page))
                 media.saveAssets(page.assets, authoritativeAppleRoles = true)
                 sql.executeUpdate(CrontabHistory::class) {
                     set(table.syncCursors, next)
@@ -342,13 +435,13 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
         where(table.albumId valueIn crontab.albumIds)
         where(table.id gt lastId)
         where(table.currentVersion eq true)
-        where(table.cloudDeleted eq false)
+        if (crontab.config.syncCloudDeletes) where(mirrorMembership(table, crontab.id))
         if (crontab.config.synologyPhotos) {
             // Choose one membership before checking download history, stable across pages/runs.
             where(notExists(subQuery(Asset::class) {
                 where(table.albumId valueIn crontab.albumIds)
                 where(table.currentVersion eq true)
-                where(table.cloudDeleted eq false)
+                if (crontab.config.syncCloudDeletes) where(mirrorMembership(table, crontab.id))
                 where(table.logicalResourceKey ne "")
                 where(table.logicalResourceKey eq parentTable.logicalResourceKey)
                 where(table.id lt parentTable.id)
@@ -379,19 +472,19 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
 
     /** At most one current membership per selected resource; group size is bounded by provider roles. */
     fun publicationGroup(crontab: Crontab, asset: Asset): List<Asset> {
-        if (asset.cloudDeleted) return emptyList()
+        if (asset.type != AssetType.AUDIO && crontab.config.syncCloudDeletes && !mirrorContains(sql, crontab.id, asset.album.id, MediaIdentity.of(asset).groupKey)) return emptyList()
         val identity = com.coooolfan.xiaomialbumsyncer.utils.MediaIdentity.of(asset)
         if (identity.provider != CloudProvider.ICLOUD) return listOf(asset)
         val keys = listOf("resOriginal", "resOriginalAlt", "resOriginalVidCompl").map { "${identity.groupKey}/$it" }
         val rows = sql.createQuery(Asset::class) {
             where(table.albumId valueIn if (crontab.config.synologyPhotos) crontab.albumIds else listOf(asset.album.id))
             where(table.currentVersion eq true)
-            where(table.cloudDeleted eq false)
+            if (crontab.config.syncCloudDeletes) where(mirrorMembership(table, crontab.id))
             where(table.logicalResourceKey valueIn keys)
             where(notExists(subQuery(Asset::class) {
                 where(table.albumId valueIn if (crontab.config.synologyPhotos) crontab.albumIds else listOf(asset.album.id))
                 where(table.currentVersion eq true)
-                where(table.cloudDeleted eq false)
+                if (crontab.config.syncCloudDeletes) where(mirrorMembership(table, crontab.id))
                 where(table.logicalResourceKey eq parentTable.logicalResourceKey)
                 where(table.id lt parentTable.id)
                 select(table)
@@ -408,6 +501,12 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
             }
         }.ifEmpty { listOf(asset) }
     }
+
+    private fun mirrorMembership(asset: KNonNullTable<Asset>, taskId: Long) = or(asset.type eq AssetType.AUDIO, sql(Boolean::class,
+        "exists (select 1 from mirror_members mm where mm.task_id = $taskId and mm.album_id = %e " +
+            "and mm.group_key = substr(%e, 1, length(%e) - 1 - " +
+            "length(coalesce(json_extract(case when json_valid(%e) then %e else '{}' end, '$.resource'), 'original'))))",
+        asset.albumId, asset.logicalResourceKey, asset.logicalResourceKey, asset.remoteKey, asset.remoteKey))
 
     private fun fetchAlbumsTimelineSnapshot(accountId: Long, albums: List<Album>): Map<Long, AlbumTimeline> {
         val albumTimelines = mutableMapOf<Long, AlbumTimeline>()

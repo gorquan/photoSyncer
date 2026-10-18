@@ -45,23 +45,21 @@ class CrontabPipeline(
         var cleanupStarted = false
         try {
             val mirror = deletion.enabled(crontab)
-            var mirrorBaselineEstablished = false
             if (mirror) {
                 deletionReport = CloudDeletionReport("CHECKING")
                 crontabService.recordDeletionReport(crontabHistory, requireNotNull(deletionReport))
-                if (media.isICloud(crontab.accountId)) {
-                    mirrorBaselineEstablished = assetService.refreshICloudAssetsByCursor(
-                        crontab, crontabHistory, crontabService.getSyncCursorsHistory(crontabHistory), deletion,
-                    ) { result ->
+                if (crontab.syncMode == CrontabSyncMode.CURSOR) {
+                    assetService.refreshICloudAssetsByCursor(crontab, crontabHistory,
+                        crontabService.getSyncCursorsHistory(crontabHistory), deletion) { result ->
                         deletionReport = crontabService.accumulateDeletionReport(crontabHistory, result)
                     }
                 } else {
-                    val detected = withContext(Dispatchers.IO) { deletion.reconcileXiaomi(crontab) }
+                    val detected = withContext(Dispatchers.IO) { assetService.refreshMirrorInventory(crontab, crontabHistory, deletion) }
                     deletionReport = crontabService.accumulateDeletionReport(crontabHistory, detected)
                 }
             }
-            when (crontab.syncMode) {
-                CrontabSyncMode.CURSOR -> if (!mirror) {
+            if (!mirror) when (crontab.syncMode) {
+                CrontabSyncMode.CURSOR -> {
                     // 基线为本任务最近一次已提交的游标，按来源读取后续变化记录
                     val syncCursors = crontabService.getSyncCursorsHistory(crontabHistory)
                     if (media.isICloud(crontab.accountId))
@@ -86,12 +84,11 @@ class CrontabPipeline(
                     }
                 }
 
-                CrontabSyncMode.FULL -> if (!mirrorBaselineEstablished) assetService.refreshAssetsFull(crontab, crontabHistory)
+                CrontabSyncMode.FULL -> assetService.refreshAssetsFull(crontab, crontabHistory)
             }
 
 
             if (deletionReport != null) {
-                deletionReport = crontabService.accumulateDeletionReport(crontabHistory, deletion.confirmPending(crontab))
                 for (group in deletion.deletedGroups(crontab)) {
                     currentCoroutineContext().ensureActive()
                     cleanupStarted = true

@@ -57,14 +57,11 @@ class ICloudChangesTest {
     @Test fun mirrorSteadyStateConsumesDeletionWithoutEnumeratingAlbums() {
         val pages = mutableListOf<ICloudChangePage>()
         val tombstone = mapper.valueToTree<JsonNode>(mapOf("recordName" to "gone", "deleted" to true))
-        val relation = record("CPLContainerRelation", "live-IN-album").deepCopy<JsonNode>().also {
-            (it as com.fasterxml.jackson.databind.node.ObjectNode).put("deleted", true)
-        }
         val requests = mutableListOf<String>()
         withServer({ path, body ->
             requests += path
             when (path) {
-                "zone" -> { assertEquals("before", body.at("/zones/0/syncToken").asText()); page("after", false, listOf(tombstone, relation)) }
+                "zone" -> { assertEquals("before", body.at("/zones/0/syncToken").asText()); page("after", false, listOf(tombstone)) }
                 "lookup" -> {
                     assertEquals(listOf("gone"), body.path("records").map { it.path("recordName").asText() })
                     mapOf("records" to listOf(mapOf("recordName" to "gone", "serverErrorCode" to "UNKNOWN_ITEM")))
@@ -77,20 +74,38 @@ class ICloudChangesTest {
         }
         assertEquals(listOf("zone", "lookup"), requests)
         assertEquals(mapOf("gone" to CloudPresence.DELETED), pages.single().presence)
+        assertEquals(mapOf("gone" to emptySet<Long>()), pages.single().scope)
         assertTrue(pages.single().assets.isEmpty())
         assertEquals("after", pages.single().cursor)
     }
 
-    @Test fun restoredUntypedRelationTombstoneDoesNotDeletePhotoOrBlockCursor() {
-        val relation = mapper.valueToTree<JsonNode>(mapOf("recordName" to "photo-IN-album", "deleted" to true))
-        withServer({ path, _ -> when (path) {
-            "zone" -> page("after", false, listOf(relation))
-            "lookup" -> mapOf("records" to listOf(record("CPLContainerRelation", "photo-IN-album")))
-            else -> error("unexpected query")
-        } }) { photos, client ->
-            photos.fetchIncrementalPages(listOf(album(1, "album")), client, "before", true, {}, {}) {
-                assertTrue(it.presence.isEmpty()); assertTrue(it.assets.isEmpty()); assertEquals("after", it.cursor)
+    @Test fun relationRemovalUsesCurrentSelectedMembershipIncludingRestorationAndOtherSelectedAlbums() {
+        for (typed in listOf(false, true)) for (current in listOf(emptySet(), setOf("album"), setOf("other"))) {
+            val relation = mapper.valueToTree<JsonNode>(mapOf("recordName" to "photo-IN-album", "deleted" to true) +
+                if (typed) mapOf("recordType" to "CPLContainerRelation") else emptyMap())
+            val lookups = mutableListOf<String>()
+            withServer({ path, body -> when (path) {
+                "zone" -> page("after", false, listOf(relation))
+                "lookup" -> mapOf("records" to body.path("records").map {
+                    val name = it.path("recordName").asText(); lookups += name
+                    when {
+                        name == "photo" -> asset("photo")
+                        name == "master-photo" -> master("photo")
+                        current.any { name == "photo-IN-$it" } -> record("CPLContainerRelation", name)
+                        else -> mapper.valueToTree<JsonNode>(mapOf("recordName" to name, "serverErrorCode" to "UNKNOWN_ITEM"))
+                    }
+                })
+                else -> error("must not enumerate albums")
+            } }) { photos, client ->
+                photos.fetchIncrementalPages(listOf(album(1, "album"), album(2, "other")), client, "before", true, {}, {}) {
+                    val expected = current.map { if (it == "album") 1L else 2L }.toSet()
+                    assertEquals(mapOf("photo" to expected), it.scope)
+                    assertEquals(expected, it.assets.map { row -> row.album.id }.toSet())
+                    assertEquals(mapOf("photo" to CloudPresence.LIVE), it.presence)
+                    assertEquals("after", it.cursor)
+                }
             }
+            assertEquals(listOf("photo", "master-photo", "photo-IN-album", "photo-IN-other"), lookups)
         }
     }
 
@@ -117,6 +132,21 @@ class ICloudChangesTest {
             photos.fetchIncrementalPages(listOf(album(1, "__all__")), client, "before", true, {}, {}) { page ->
                 assertEquals(mapOf("hidden" to CloudPresence.LIVE), page.presence)
                 assertTrue(page.assets.isEmpty())
+                assertEquals(mapOf("hidden" to emptySet<Long>()), page.scope)
+            }
+        }
+    }
+
+    @Test fun leavingFavoritesRemovesSelectedMembershipWithoutDeletingFromLibrary() {
+        withServer({ path, _ -> when (path) {
+            "zone" -> page("after", false, listOf(asset("unfavorited"), master("unfavorited")))
+            "lookup" -> mapOf("records" to listOf(asset("unfavorited")))
+            else -> error("unexpected query")
+        } }) { photos, client ->
+            photos.fetchIncrementalPages(listOf(album(1, "__favorites__")), client, "before", true, {}, {}) {
+                assertEquals(mapOf("unfavorited" to CloudPresence.LIVE), it.presence)
+                assertEquals(mapOf("unfavorited" to emptySet<Long>()), it.scope)
+                assertTrue(it.assets.isEmpty())
             }
         }
     }

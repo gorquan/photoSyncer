@@ -185,37 +185,6 @@ class XiaoMiApi(private val tokenManager: TokenManager) {
         )
     }
 
-    /** Current recycle-bin contents are library deletion evidence, not album membership changes. */
-    fun fetchDeletedGalleryIds(accountId: Long): Set<String> {
-        val ids = mutableSetOf<String>()
-        val seenTags = mutableSetOf("0")
-        var tag = "0"
-        do {
-            val response = getJson(accountId, apiProperties.url(
-                "gallery/deleted_v2?ts=${System.currentTimeMillis()}&maxTag=$tag&limit=50"))
-            val page = parseDeletedGalleryPage(response)
-            require(page.ids.none { it in ids }) { "小米回收站分页重复记录" }
-            ids += page.ids
-            if (page.lastPage) return ids
-            require(seenTags.add(page.syncTag)) { "小米回收站分页位点没有推进" }
-            tag = page.syncTag
-        } while (true)
-    }
-
-    /** A successful storage URL proves presence; unavailable storage alone never proves deletion. */
-    fun probeGalleryPresence(accountId: Long, remoteKey: String): com.coooolfan.xiaomialbumsyncer.model.CloudPresence {
-        val id = remoteKey.toLongOrNull() ?: error("小米资产标识无效")
-        return try {
-            parseGalleryPresence(getJson(accountId,
-                apiProperties.url("gallery/storage?ts=${System.currentTimeMillis()}&id=$id")))
-        } catch (error: XiaomiBusinessException) {
-            if (error.code == 50050) {
-                throw XiaomiGalleryPresenceUncertain(error)
-            }
-            throw error
-        }
-    }
-
     fun downloadAsset(accountId: Long, asset: Asset, targetPath: Path): Boolean {
         val url =
             if (asset.type == AssetType.AUDIO)
@@ -377,8 +346,6 @@ internal fun hasXiaomiMotionHint(description: JsonNode?): Boolean {
     return "1006" in flags || ("1073" in flags && "1065" in flags)
 }
 
-internal data class DeletedGalleryPage(val ids: Set<String>, val lastPage: Boolean, val syncTag: String)
-
 internal fun parseAlbumTimeline(response: JsonNode): AlbumTimeline {
     response.throwIfBizError()
     val indexHash = response.at("/data/indexHash")
@@ -390,44 +357,6 @@ internal fun parseAlbumTimeline(response: JsonNode): AlbumTimeline {
         LocalDate.parse(entry.key, BASIC_ISO_DATE) to count.asLong()
     }
     return AlbumTimeline(indexHash.asText(), dayCounts)
-}
-
-/** Storage's invalid-state response cannot independently establish deletion. */
-internal class XiaomiGalleryPresenceUncertain(cause: Throwable? = null) :
-    IllegalStateException("无法确认云端删除（小米错误码 50050），本次保留本地文件", cause)
-
-internal fun parseDeletedGalleryPage(response: JsonNode): DeletedGalleryPage {
-    response.throwIfBizError()
-    val data = response.path("data")
-    val content = data.path("content")
-    val last = data.path("lastPage")
-    val tag = data.path("syncTag")
-    require(content.isArray && last.isBoolean && (tag.isTextual || tag.isIntegralNumber) && tag.asText().matches(Regex("[0-9]+"))) {
-        "小米回收站分页响应不完整"
-    }
-    require(last.asBoolean() || !content.isEmpty) { "小米回收站非末页为空" }
-    val ids = content.map { item ->
-        val id = item.path("id")
-        val deletedAt = item.path("deleteTime")
-        require(item.path("status").asText() == "deleted" &&
-            (id.isTextual || id.isIntegralNumber) && id.asText().toLongOrNull()?.let { it > 0 } == true &&
-            deletedAt.isIntegralNumber && deletedAt.canConvertToLong() && deletedAt.asLong() > 0) {
-            "小米回收站记录缺少明确删除证据"
-        }
-        id.asText()
-    }
-    require(ids.size == ids.toSet().size) { "小米回收站页包含重复记录" }
-    return DeletedGalleryPage(ids.toSet(), last.asBoolean(), tag.asText())
-}
-
-internal fun parseGalleryPresence(response: JsonNode): CloudPresence {
-    response.throwIfBizError()
-    val url = response.at("/data/url").takeIf { it.isTextual }?.asText()
-    val uri = runCatching { java.net.URI(url ?: "") }.getOrNull()
-    require(uri != null && uri.scheme in setOf("http", "https") && !uri.host.isNullOrBlank()) {
-        "小米资产状态查询缺少有效地址，无法判断是否删除"
-    }
-    return CloudPresence.LIVE
 }
 
 internal fun validateAssetEnumerationPage(response: JsonNode, audio: Boolean, pageSize: Int) {

@@ -120,7 +120,7 @@ class SynologySelectionTest {
         sql.executeUpdate(Asset::class) {
             where(table.remoteKey eq "remote-1"); set(table.cloudDeleted, true)
         }
-        assertEquals(1L, service.countAssetsForPublication(noAudio))
+        assertEquals(2L, service.countAssetsForPublication(noAudio), "legacy global deletion must not suppress a backup")
     }
 
     @Test fun authoritativeAppleObservationRetiresMissingRolesAcrossMemberships() = withStore { _, media, service, albums ->
