@@ -10,6 +10,9 @@ Asset.checksum is provider-specific: Xiaomi ordinary SHA-1; CloudKit opaque file
 Preserve original Apple ContentIdentifier and Xiaomi embedded video/XMP. Apple primary image and companion MOV share a stable basename from account/zone/record identity; alternate originals have distinct roles. Download ordinary videos independently from Live Photo companions. Persist local SHA-256 and verification basis. Never claim NAS indexing/preview from local completion.
 
 ## Validation & Error Matrix
+
+The shared ExifTool process invocation always passes `-api LargeFileSupport=1` for reads and writes so metadata filling can process video atoms larger than 2 GiB. Preserve nonzero-exit failures and the existing narrowly matched conditional no-op behavior.
+
 Xiaomi checksum mismatch or source-size mismatch => failure, retryable. CloudKit opaque signature => size/structure plus local SHA-256, never raw SHA-1 interpretation. Motion metadata with invalid ranges/container => explicit failure; valid dynamic originals bypass metadata mutation. Publish only validated complete components. Existing paths require version/integrity evidence.
 
 ## Good / Base / Bad Cases

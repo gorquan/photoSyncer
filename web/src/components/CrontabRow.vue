@@ -305,7 +305,9 @@ async function fetchStats() {
     if (!currentStats.value.ts) {
       emit('refresh')
     }
-    lastFetchTime.value = Date.now()
+    const fetchedAt = Date.now()
+    now.value = fetchedAt
+    lastFetchTime.value = fetchedAt
   } catch (e: unknown) {
     console.debug('Failed to fetch stats', e)
     const msg = e instanceof Error ? e.message : String(e)
@@ -639,7 +641,7 @@ onUnmounted(() => {
                 <span v-if="lastFetchTime" class="font-mono text-[13px] text-blue-500/80">
                   {{
                     t('schedule.row.statsAge', {
-                      n: ((now - lastFetchTime) / 1000).toFixed(1),
+                      n: (Math.max(0, now - lastFetchTime) / 1000).toFixed(1),
                     })
                   }}
                 </span>
