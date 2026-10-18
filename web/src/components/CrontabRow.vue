@@ -344,10 +344,17 @@ function stopPolling() {
 
 function getPercent(val?: number) {
   if (val === undefined || !currentStats.value?.assetCount) return 0
-  return Math.min(100, Math.round((val / currentStats.value.assetCount) * 100))
+  return Math.max(0, Math.min(100, Math.floor((val / currentStats.value.assetCount) * 1000) / 10))
 }
 
 const downloadPercent = computed(() => getPercent(currentStats.value?.downloadCompletedCount))
+const publicationPercent = computed(() => getPercent(currentStats.value?.publishedCount))
+const finalizing = computed(
+  () =>
+    currentStats.value?.assetCount != null &&
+    currentStats.value.publishedCount != null &&
+    currentStats.value.publishedCount >= currentStats.value.assetCount,
+)
 
 watch(
   () => props.crontab.running,
@@ -439,18 +446,21 @@ onUnmounted(() => {
 
       <!-- running progress (inline) -->
       <div
-        v-if="crontab.running && currentStats?.assetCount"
-        class="hidden w-28 shrink-0 items-center gap-2 lg:flex"
+        v-if="
+          crontab.running && currentStats?.assetCount != null && currentStats.publishedCount != null
+        "
+        class="hidden w-36 shrink-0 items-center gap-2 lg:flex"
+        :title="t('schedule.row.publicationProgress')"
       >
         <div class="h-1 flex-1 rounded-full bg-slate-200 dark:bg-slate-700">
           <div
             class="h-1 rounded-full bg-blue-500 transition-all duration-500"
-            :style="{ width: downloadPercent + '%' }"
+            :style="{ width: publicationPercent + '%' }"
           />
         </div>
-        <span class="font-mono text-[13px] tabular-nums text-slate-500 dark:text-slate-400"
-          >{{ downloadPercent }}%</span
-        >
+        <span class="font-mono text-[13px] tabular-nums text-slate-500 dark:text-slate-400">{{
+          finalizing ? t('schedule.row.finalizing') : publicationPercent + '%'
+        }}</span>
       </div>
       <span
         v-else-if="crontab.running"
@@ -656,8 +666,33 @@ onUnmounted(() => {
                   t('schedule.row.totalAssets')
                 }}</span>
                 <span class="font-mono font-bold text-blue-700 dark:text-blue-300">{{
-                  currentStats.assetCount ?? '-'
+                  currentStats.assetCount ?? t('schedule.row.totalUnknown')
                 }}</span>
+              </div>
+
+              <div v-if="currentStats.publishedCount !== undefined" class="text-[13px]">
+                <div class="mb-1 flex items-center justify-between">
+                  <span class="text-slate-500 dark:text-slate-400">{{
+                    t('schedule.row.publicationProgress')
+                  }}</span>
+                  <span class="font-mono text-slate-700 dark:text-slate-200"
+                    >{{ currentStats.publishedCount }}
+                    <span
+                      v-if="currentStats.assetCount != null"
+                      class="text-slate-500 dark:text-slate-400"
+                      >/ {{ currentStats.assetCount }}</span
+                    ></span
+                  >
+                </div>
+                <div
+                  v-if="currentStats.assetCount"
+                  class="h-1 w-full rounded-full bg-blue-200 dark:bg-blue-900"
+                >
+                  <div
+                    class="h-1 rounded-full bg-blue-500 transition-all duration-500"
+                    :style="{ width: publicationPercent + '%' }"
+                  />
+                </div>
               </div>
 
               <div v-if="currentStats.downloadCompletedCount !== undefined" class="text-[13px]">

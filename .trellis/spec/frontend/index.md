@@ -6,6 +6,8 @@ Vue/TypeScript under web; use existing form composables and i18n catalogs. Keep 
 ## Quality Check
 Run `yarn lint`, `yarn format`, `yarn build` from web. Ensure defaults work for old JSON configurations; all language catalogs must contain new keys.
 
+Overall running-task progress uses `publishedCount` over the fixed `assetCount` snapshot. Unknown totals show counts without percentages. Stage bars use the same total, but download completion does not imply task completion. Floor percentages to one decimal to avoid premature 100%; when all planned resources are published while the task is still running, show a finalizing label.
+
 Running-task statistics age resets both local clock references to the same response-completion timestamp and clamps elapsed time to zero, including when the wall clock moves backward.
 
 Deletion settings must explain permanent removal of managed exports and unreferenced originals/history versions. New task forms enable syncCloudDeletes; editing old missing values defaults false. History uses executionStatus for success/partial/failure/cancellation and shows deletionReport totals plus conflicts; endTime alone only means ended. Use backend-generated report types rather than parallel UI payload definitions. See [backend deletion contract](../backend/cloud-deletion.md).

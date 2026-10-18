@@ -15,6 +15,8 @@ import kotlinx.coroutines.sync.withPermit
 import org.babyfish.jimmer.sql.fetcher.Fetcher
 import org.babyfish.jimmer.sql.kt.KSqlClient
 import org.babyfish.jimmer.sql.kt.ast.expression.*
+import org.babyfish.jimmer.sql.kt.ast.query.KMutableRootQuery
+import org.babyfish.jimmer.sql.kt.ast.table.KNonNullTable
 import org.noear.solon.annotation.Managed
 import org.slf4j.LoggerFactory
 import java.time.Instant
@@ -284,42 +286,7 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
         reevaluatePublication: Boolean = false,
     ): List<Asset> {
         return sql.createQuery(Asset::class) {
-            where(table.albumId valueIn crontab.albumIds)
-            where(table.id gt lastId)
-            where(table.currentVersion eq true)
-            where(table.cloudDeleted eq false)
-            if (crontab.config.synologyPhotos) {
-                // Choose one membership before checking download history, stable across pages/runs.
-                where(notExists(subQuery(Asset::class) {
-                    where(table.albumId valueIn crontab.albumIds)
-                    where(table.currentVersion eq true)
-                    where(table.cloudDeleted eq false)
-                    where(table.logicalResourceKey ne "")
-                    where(table.logicalResourceKey eq parentTable.logicalResourceKey)
-                    where(table.id lt parentTable.id)
-                    select(table)
-                }))
-            }
-            if (!reevaluatePublication) where(
-                notExists(
-                    subQuery(CrontabHistoryDetail::class) {
-                        where(table.crontabHistory.crontabId eq crontab.id)
-                        where(table.assetId eq parentTable.id)
-                        where(table.downloadCompleted eq true)
-                        where(table.sha1Verified eq true)
-                        where(table.exifFilled eq true)
-                        where(table.fsTimeUpdated eq true)
-                        select(table)
-                    })
-            )
-            if (!crontab.config.downloadImages) where(table.type ne AssetType.IMAGE)
-            val companion = table.logicalResourceKey like "%/resOriginalVidCompl"
-            if (!crontab.config.downloadVideos) {
-                if (crontab.config.downloadLivePhotos && crontab.config.downloadImages) where(or(table.type ne AssetType.VIDEO, companion))
-                else where(table.type ne AssetType.VIDEO)
-            }
-            if (!crontab.config.downloadLivePhotos || !crontab.config.downloadImages) where(companion.not())
-            if (!crontab.config.downloadAudios) where(table.type ne AssetType.AUDIO)
+            filterCrontabAssets(crontab, lastId, reevaluatePublication)
             orderBy(table.id.asc())
             select(table.fetchBy {
                 allScalarFields()
@@ -328,6 +295,54 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
         }.limit(pageSize).execute()
     }
 
+
+    fun countAssetsForPublication(crontab: Crontab): Long = sql.createQuery(Asset::class) {
+        filterCrontabAssets(crontab, 0, reevaluatePublication = true)
+        select(count(table))
+    }.execute().single()
+
+    private fun KMutableRootQuery<KNonNullTable<Asset>>.filterCrontabAssets(
+        crontab: Crontab,
+        lastId: Long,
+        reevaluatePublication: Boolean,
+    ) {
+        where(table.albumId valueIn crontab.albumIds)
+        where(table.id gt lastId)
+        where(table.currentVersion eq true)
+        where(table.cloudDeleted eq false)
+        if (crontab.config.synologyPhotos) {
+            // Choose one membership before checking download history, stable across pages/runs.
+            where(notExists(subQuery(Asset::class) {
+                where(table.albumId valueIn crontab.albumIds)
+                where(table.currentVersion eq true)
+                where(table.cloudDeleted eq false)
+                where(table.logicalResourceKey ne "")
+                where(table.logicalResourceKey eq parentTable.logicalResourceKey)
+                where(table.id lt parentTable.id)
+                select(table)
+            }))
+        }
+        if (!reevaluatePublication) where(
+            notExists(
+                subQuery(CrontabHistoryDetail::class) {
+                    where(table.crontabHistory.crontabId eq crontab.id)
+                    where(table.assetId eq parentTable.id)
+                    where(table.downloadCompleted eq true)
+                    where(table.sha1Verified eq true)
+                    where(table.exifFilled eq true)
+                    where(table.fsTimeUpdated eq true)
+                    select(table)
+                })
+        )
+        if (!crontab.config.downloadImages) where(table.type ne AssetType.IMAGE)
+        val companion = table.logicalResourceKey like "%/resOriginalVidCompl"
+        if (!crontab.config.downloadVideos) {
+            if (crontab.config.downloadLivePhotos && crontab.config.downloadImages) where(or(table.type ne AssetType.VIDEO, companion))
+            else where(table.type ne AssetType.VIDEO)
+        }
+        if (!crontab.config.downloadLivePhotos || !crontab.config.downloadImages) where(companion.not())
+        if (!crontab.config.downloadAudios) where(table.type ne AssetType.AUDIO)
+    }
 
     /** At most one current membership per selected resource; group size is bounded by provider roles. */
     fun publicationGroup(crontab: Crontab, asset: Asset): List<Asset> {

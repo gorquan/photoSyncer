@@ -1866,6 +1866,10 @@
           "parameterTypes": []
         },
         {
+          "name": "getPublishedCount",
+          "parameterTypes": []
+        },
+        {
           "name": "getSha1VerifiedCount",
           "parameterTypes": []
         },
@@ -2490,6 +2494,10 @@
         },
         {
           "name": "getFsTimeUpdatedCount",
+          "parameterTypes": []
+        },
+        {
+          "name": "getPublishedCount",
           "parameterTypes": []
         },
         {
@@ -7242,7 +7250,8 @@
         {
           "name": "finishCrontabHistoryFetchedAllAssets",
           "parameterTypes": [
-            "com.coooolfan.xiaomialbumsyncer.model.CrontabHistory"
+            "com.coooolfan.xiaomialbumsyncer.model.CrontabHistory",
+            "long"
           ]
         },
         {

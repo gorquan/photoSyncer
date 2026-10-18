@@ -31,11 +31,13 @@ class SynologySelectionTest {
         assertEquals(listOf("B"), service.getAssetsUndownloadByCrontab(job, 10, 0).map { it.checksum })
         media.saveAssets(listOf(image(albums[0], "A")))
         val selected = service.getAssetsUndownloadByCrontab(job, 1, 0)
+        assertEquals(1L, service.countAssetsForPublication(job))
         assertEquals(first.id, selected.single().id)
         assertTrue(service.getAssetsUndownloadByCrontab(job, 1, first.id).isEmpty())
         assertEquals("A", service.getAssetsUndownloadByCrontab(job(listOf(albums[1])), 10, 0).single().checksum)
         val native = Crontab(job) { config = job.config.copy(synologyPhotos = false) }
         assertEquals(2, service.getAssetsUndownloadByCrontab(native, 10, 0).size)
+        assertEquals(2L, service.countAssetsForPublication(native))
         // Different remote records with identical bytes remain separate assets.
         media.saveAssets(listOf(image(albums[0], "A", "different")))
         assertEquals(2, service.getAssetsUndownloadByCrontab(job, 10, 0).size)
@@ -51,6 +53,7 @@ class SynologySelectionTest {
         val photosOnly = Crontab(job) { config = job.config.copy(downloadVideos = false) }
         val selected = service.getAssetsUndownloadByCrontab(photosOnly, 10, 0)
         assertEquals(3, selected.size)
+        assertEquals(3L, service.countAssetsForPublication(photosOnly))
         val history = CrontabHistory { id = 1; crontab = photosOnly; startTime = Instant.EPOCH }
         val primary = selected.first { it.checksum == "photo" }
         val companion = selected.first { it.checksum == "movie" }
@@ -60,6 +63,11 @@ class SynologySelectionTest {
         assertEquals(primaryPath.fileName.toString().substringBeforeLast('.'), companionPath.fileName.toString().substringBeforeLast('.'))
         assertNotEquals(MediaIdentity.of(primary).stem, MediaIdentity.of(selected.first { it.checksum == "alt" }).stem)
         val disabled = Crontab(job) { config = job.config.copy(downloadLivePhotos = false) }
+        assertEquals(3L, service.countAssetsForPublication(disabled))
+        val noImages = Crontab(job) { config = job.config.copy(downloadImages = false) }
+        assertEquals(1L, service.countAssetsForPublication(noImages))
+        val nothing = Crontab(noImages) { config = noImages.config.copy(downloadVideos = false) }
+        assertEquals(0L, service.countAssetsForPublication(nothing))
         assertEquals(setOf("photo", "alt", "ordinary"), service.getAssetsUndownloadByCrontab(disabled, 10, 0).map { it.checksum }.toSet())
         assertThrows(IllegalArgumentException::class.java) {
             photosOnly.config.copy(targetPath = "/data/\${assetId}/\${checksum}")
@@ -97,13 +105,22 @@ class SynologySelectionTest {
         assertTrue(memberships.all { it.title == "partial" && it.dateTaken == changedTime && it.size == 12L && it.motionPhotoHint })
     }
 
-    @Test fun xiaomiOverlapUsesRemoteIdentityRatherThanByteChecksum() = withStore(CloudProvider.XIAOMI) { _, media, service, albums ->
+    @Test fun xiaomiOverlapUsesRemoteIdentityRatherThanByteChecksum() = withStore(CloudProvider.XIAOMI) { sql, media, service, albums ->
         fun native(album: Album, key: String) = Asset(resource(album, "same-sha1", "unused", "resOriginal")) { remoteKey = key }
         media.saveAssets(listOf(native(albums[0], "remote-1"), native(albums[1], "remote-1"), native(albums[0], "remote-2")))
         val selected = service.getAssetsUndownloadByCrontab(job(albums), 10, 0)
         assertEquals(setOf("remote-1", "remote-2"), selected.map { it.remoteKey }.toSet())
         assertEquals(2, selected.size)
+        assertEquals(2L, service.countAssetsForPublication(job(albums)))
         assertNotEquals(MediaIdentity.of(selected[0]).stem, MediaIdentity.of(selected[1]).stem)
+        media.saveAssets(listOf(Asset(native(albums[0], "remote-audio")) { type = AssetType.AUDIO }))
+        assertEquals(3L, service.countAssetsForPublication(job(albums)))
+        val noAudio = Crontab(job(albums)) { config = job(albums).config.copy(downloadAudios = false) }
+        assertEquals(2L, service.countAssetsForPublication(noAudio))
+        sql.executeUpdate(Asset::class) {
+            where(table.remoteKey eq "remote-1"); set(table.cloudDeleted, true)
+        }
+        assertEquals(1L, service.countAssetsForPublication(noAudio))
     }
 
     @Test fun authoritativeAppleObservationRetiresMissingRolesAcrossMemberships() = withStore { _, media, service, albums ->
@@ -149,6 +166,66 @@ class SynologySelectionTest {
         assertTrue(service.fetchAssetPathMapBy(task.id).isEmpty())
         publish(first, path)
         assertEquals(setOf(first.id), service.fetchAssetPathMapBy(task.id).keys.map { it.id }.toSet())
+    }
+
+    @Test fun plannedTotalIsFixedBeforeAndAcrossProcessingBatches() = withStore { sql, media, assets, albums ->
+        media.saveAssets(listOf(
+            resource(albums[0], "photo", "live", "resOriginal"),
+            resource(albums[1], "photo", "live", "resOriginal"),
+            resource(albums[0], "movie", "live", "resOriginalVidCompl"),
+            resource(albums[0], "ordinary", "video", "resOriginal", video = true),
+        ))
+        val task = sql.saveCommand(Crontab {
+            name = "progress"; description = ""; enabled = false; syncMode = CrontabSyncMode.FULL
+            accountId = albums[0].accountId; albumIds = albums.map { it.id }; config = job(albums).config
+        }, SaveMode.INSERT_ONLY).execute().modifiedEntity
+        val service = CrontabService(sql)
+        val history = service.createCrontabHistory(task)
+        fun stats() = service.getHistoryCurrentStats(sql.findOneById(CrontabHistory::class, history.id))
+        assertNull(stats().assetCount)
+        service.finishCrontabHistoryFetchedAllAssets(history, assets.countAssetsForPublication(task))
+        assertEquals(3L, stats().assetCount)
+        assertEquals(0L, stats().publishedCount)
+        val selected = assets.getAssetsUndownloadByCrontab(task, 10, 0, reevaluatePublication = true)
+        val first = service.insertCrontabHistoryDetails(listOf(CrontabHistoryDetail.init(history, selected[0]))).single()
+        sql.executeUpdate(CrontabHistoryDetail::class) {
+            where(table.id eq first.id); set(table.downloadCompleted, true)
+        }
+        assertEquals(3L, stats().assetCount)
+        assertEquals(1L, stats().downloadCompletedCount)
+        assertEquals(0L, stats().publishedCount) // Download is not final publication.
+        service.insertCrontabHistoryDetails(selected.drop(1).map { CrontabHistoryDetail.init(history, it) })
+        sql.executeUpdate(CrontabHistoryDetail::class) {
+            where(table.crontabHistoryId eq history.id); set(table.downloadCompleted, true)
+        }
+        assertEquals(3L, stats().assetCount)
+        assertEquals(3L, stats().downloadCompletedCount)
+        assertEquals(0L, stats().publishedCount)
+        sql.executeUpdate(CrontabHistoryDetail::class) {
+            where(table.id eq first.id); set(table.publicationStatus, "FAILED")
+        }
+        sql.executeUpdate(CrontabHistoryDetail::class) {
+            where(table.crontabHistoryId eq history.id); where(table.id ne first.id)
+            set(table.publicationStatus, "PUBLISHED")
+        }
+        assertEquals(2L, stats().publishedCount)
+        assertEquals(3L, stats().assetCount)
+        sql.executeUpdate(CrontabHistoryDetail::class) {
+            where(table.id eq first.id); set(table.publicationStatus, "PUBLISHED")
+        }
+        assertEquals(3L, stats().publishedCount)
+        // Older histories cannot infer a total from their currently inserted details.
+        sql.executeUpdate(CrontabHistory::class) {
+            where(table.id eq history.id); set(table.plannedAssetCount, null)
+        }
+        assertNull(stats().assetCount)
+        assertEquals(3L, stats().publishedCount)
+        val emptyTask = Crontab(task) { config = task.config.copy(downloadImages = false, downloadVideos = false) }
+        val emptyHistory = service.createCrontabHistory(emptyTask)
+        service.finishCrontabHistoryFetchedAllAssets(emptyHistory, assets.countAssetsForPublication(emptyTask))
+        val emptyStats = service.getHistoryCurrentStats(sql.findOneById(CrontabHistory::class, emptyHistory.id))
+        assertEquals(0L, emptyStats.assetCount)
+        assertEquals(0L, emptyStats.publishedCount)
     }
 
     @Test fun oldJsonRetainsLayoutWhileEnablingLiveCompanions() {
