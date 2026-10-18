@@ -4,6 +4,8 @@
 
 Read JPEG marker segments and entropy escapes to locate APP1 XMP and the actual primary EOI. Never search arbitrary bytes for the first EOI or ftyp to infer a video offset. Bound XMP size, XML nesting, JPEG segment count, MP4 nesting and box count; disable XML DTD, external entities and schema access.
 
+XMP packets may contain a terminal NUL padding run. Exclude it only from the XML parser's input view when the first NUL begins an entirely NUL suffix; preserve the original JPEG, APP1 lengths and declared motion offsets. Never strip embedded NULs or truncate at the first NUL when later nonzero bytes exist: UTF-16/32 XML contains legitimate zero bytes. Validate every XMP packet independently and retain all XML security limits. Cover static and native-motion padding, multiple packets, UTF-16 encodings, malformed XML, embedded NULs, DTDs and invalid video ranges with synthetic regressions.
+
 For MotionPhoto version 1, account for the ordered GContainer items from EOF. Primary padding and explicit positive lengths for additional items are supported; non-primary nonzero padding or missing lengths are unsupported. For MicroVideo version 1, use the explicit MicroVideoOffset. Both declarations must agree when present. The declared range must follow the primary JPEG and contain well-sized ftyp/moov/mdat ISO BMFF boxes. This is a structural check, not a complete track/sample decode or proof of playback on every client.
 
 Validated native originals bypass all EXIF entrypoints without invoking ExifTool. Invalid or unsupported declarations fail before mutation. Ordinary files, including paths under `/tmp`, still receive requested metadata processing. No default transcoding or reinterpretation of presentation timestamps is performed.

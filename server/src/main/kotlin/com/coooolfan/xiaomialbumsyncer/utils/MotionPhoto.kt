@@ -161,6 +161,10 @@ private fun inspectJpegMotion(path: Path): MotionPhotoInspection {
 
 private fun ByteArray.startsWith(prefix: ByteArray) = size >= prefix.size && prefix.indices.all { this[it] == prefix[it] }
 private fun parseXmp(bytes: ByteArray): Element = try {
+    // Ignore only a terminal NUL run in the parser view. Embedded NULs (including
+    // valid UTF-16/32 code units) and the original JPEG bytes remain untouched.
+    val firstNul = bytes.indexOf(0)
+    val xmlLength = if (firstNul >= 0 && (firstNul until bytes.size).all { bytes[it] == 0.toByte() }) firstNul else bytes.size
     val factory = DocumentBuilderFactory.newInstance().apply {
         isNamespaceAware = true
         setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
@@ -179,7 +183,7 @@ private fun parseXmp(bytes: ByteArray): Element = try {
             override fun fatalError(e: SAXParseException) { throw e }
         })
         setEntityResolver { _, _ -> InputSource("".reader()) }
-    }.parse(bytes.inputStream()).documentElement
+    }.parse(bytes.inputStream(0, xmlLength)).documentElement
 } catch (_: Exception) { invalid("XMP XML 无效或包含被禁止的外部实体") }
 
 private fun Element.descendants(namespace: String, local: String): List<Element> {

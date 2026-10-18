@@ -30,10 +30,12 @@ class MotionPhotoTest {
             <rdf:li><Container:Item Item:Semantic="MotionPhoto" Item:Mime="video/mp4" Item:Length="$length"/></rdf:li></rdf:Seq></Container:Directory>""",
     )
     private fun legacy(offset: String = video.size.toString()) = xml("""GCamera:MicroVideo="1" GCamera:MicroVideoVersion="1" GCamera:MicroVideoOffset="$offset"""")
-    private fun jpeg(xmp: String? = null, trailer: ByteArray = ByteArray(0)): ByteArray {
-        val app = if (xmp == null) ByteArray(0) else {
-            val content = "http://ns.adobe.com/xap/1.0/\u0000".toByteArray() + xmp.toByteArray()
-            byteArrayOf(0xff.toByte(), 0xe1.toByte()) + ByteBuffer.allocate(2).putShort((content.size + 2).toShort()).array() + content
+    private fun jpeg(xmp: String? = null, trailer: ByteArray = ByteArray(0)) =
+        jpegPackets(listOfNotNull(xmp?.toByteArray()), trailer)
+    private fun jpegPackets(packets: List<ByteArray>, trailer: ByteArray = ByteArray(0)): ByteArray {
+        val app = packets.fold(ByteArray(0)) { previous, packet ->
+            val content = "http://ns.adobe.com/xap/1.0/\u0000".toByteArray() + packet
+            previous + byteArrayOf(0xff.toByte(), 0xe1.toByte()) + ByteBuffer.allocate(2).putShort((content.size + 2).toShort()).array() + content
         }
         // A JPEG scan contains escaped FF00 and a restart marker before the actual EOI.
         return byteArrayOf(0xff.toByte(), 0xd8.toByte()) + app +
@@ -42,7 +44,7 @@ class MotionPhotoTest {
     private fun inspect(bytes: ByteArray) = inspectMotionPhoto(Files.write(directory.resolve("test.jpg"), bytes))
 
     @Test fun `modern and legacy motion preserve bytes through both EXIF entrypoints`() {
-        for (metadata in listOf(modern(), legacy())) {
+        for (metadata in listOf(modern(), legacy(), modern() + "\u0000", legacy() + "\u0000\u0000")) {
             val original = jpeg(metadata, video)
             val path = Files.write(directory.resolve("motion.jpg"), original)
             val inspection = inspectMotionPhoto(path)
@@ -54,6 +56,44 @@ class MotionPhotoTest {
             rewriteVideoExifTime(asset, path, disabledTool)
             assertArrayEquals(original, Files.readAllBytes(path))
         }
+    }
+
+    @Test fun `terminal NUL padding is accepted independently for multiple XMP packets without mutation`() {
+        for (padding in listOf(1, 8)) {
+            val original = jpegPackets(listOf(xml("").toByteArray() + ByteArray(padding), xml("").toByteArray()))
+            val path = Files.write(directory.resolve("padded.jpg"), original)
+            val result = inspectMotionPhoto(path)
+            assertEquals(MotionPhotoStatus.STATIC, result.status, result.diagnostic)
+            assertArrayEquals(original, Files.readAllBytes(path))
+        }
+    }
+
+    @Test fun `UTF-16 XML keeps encoded NUL bytes including its final byte`() {
+        for (encoding in listOf("UTF-16", "UTF-16LE", "UTF-16BE")) {
+            val metadata = "<?xml version=\"1.0\" encoding=\"$encoding\"?>" + xml("")
+            val original = jpegPackets(listOf(metadata.toByteArray(charset(encoding))))
+            val path = Files.write(directory.resolve("encoded.jpg"), original)
+            val result = inspectMotionPhoto(path)
+            assertEquals(MotionPhotoStatus.STATIC, result.status, result.diagnostic)
+            assertArrayEquals(original, Files.readAllBytes(path))
+        }
+    }
+
+    @Test fun `terminal padding does not hide malformed XML embedded NULs or unsafe declarations`() {
+        val malformed = listOf(
+            "<broken>\u0000",
+            xml("").replace("</rdf:Description>", "\u0000</rdf:Description>") + "\u0000",
+            xml("") + "\u0000<extra/>",
+            "<!DOCTYPE x [<!ENTITY a SYSTEM \"file:///forbidden\">]><x>&a;</x>\u0000",
+            "<x>".repeat(150) + "</x>".repeat(150) + "\u0000",
+        )
+        for (metadata in malformed) {
+            val original = jpeg(metadata)
+            val path = Files.write(directory.resolve("invalid-padded.jpg"), original)
+            assertEquals(MotionPhotoStatus.INVALID, inspectMotionPhoto(path).status)
+            assertArrayEquals(original, Files.readAllBytes(path))
+        }
+        assertEquals(MotionPhotoStatus.INVALID, inspect(jpeg(modern() + "\u0000", ByteArray(0))).status)
     }
 
     @Test fun `explicit extra item and primary padding are accounted for`() {
