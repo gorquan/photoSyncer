@@ -242,4 +242,97 @@ class MediaDeletionTest {
         assertTrue(Files.exists(Path.of(receipt.outputs.single().path))); assertTrue(Files.exists(Path.of(receipt.outputs.single().archive)))
     }
 
+    private fun publishLayout(task: Long = 1, out: String = "old", albumId: Long? = 1,
+                              pair: Boolean = true): PublicationReceipt {
+        val inputs = (if (pair) listOf(detail(task = task, out = out), detail("resOriginalVidCompl", task = task, out = out))
+            else listOf(detail(task = task, out = out))).map { input ->
+            if (albumId == null) input else CrontabHistoryDetail(input) {
+                crontabHistory = CrontabHistory(input.crontabHistory) {
+                    crontab = Crontab(input.crontabHistory.crontab) {
+                        config = input.crontabHistory.crontab.config.copy(synologyPhotos = false)
+                    }
+                }
+            }
+        }
+        return MediaPublisher(root).publish("$task/${key()}" + (albumId?.let { "/$it" } ?: ""),
+            directory.resolve(out).toString(), "layout-$out", inputs,
+            { asset, path -> Files.write(path, if (asset.type == AssetType.VIDEO) mov else jpeg); true }, { _, _ -> })
+    }
+
+    @Test fun photosMigrationRetiresAllAlbumLayoutsOnlyAfterValidatedReplacement() {
+        val first = publishLayout(out = "old-one")
+        val second = publishLayout(out = "old-two", albumId = 2)
+        val cleanup = MediaDeletion(root)
+        assertEquals(setOf(key()), cleanup.legacyLayoutGroups(1))
+        assertTrue(cleanup.legacyLayoutGroups(2).isEmpty())
+        assertEquals("CONFLICT", cleanup.retireAlbumLayouts(1, key()).status)
+        assertTrue((first.outputs + second.outputs).all { Files.exists(Path.of(it.path)) })
+        val current = publishLayout(out = "photos", albumId = null)
+        val unowned = directory.resolve("old-one/user.jpg"); Files.write(unowned, jpeg)
+        assertEquals(4, cleanup.retireAlbumLayouts(1, key()).exportsDeleted)
+        assertTrue((first.outputs + second.outputs).none { Files.exists(Path.of(it.path)) })
+        assertTrue(current.outputs.all { Files.isRegularFile(Path.of(it.path)) })
+        assertTrue(Files.exists(unowned))
+        assertTrue(cleanup.legacyLayoutGroups(1).isEmpty())
+        assertEquals(0, cleanup.retireAlbumLayouts(1, key()).exportsDeleted)
+        assertFalse(Files.exists(root.resolve("originals")))
+    }
+
+    @Test fun photosMigrationPreservesOldPairWhenReplacementIsIncompleteOrCorrupt() {
+        val old = publishLayout()
+        val partial = publishLayout(out = "photos", albumId = null, pair = false)
+        assertEquals("CONFLICT", MediaDeletion(root).retireAlbumLayouts(1, key()).status)
+        assertTrue(old.outputs.all { Files.exists(Path.of(it.path)) })
+        val complete = publishLayout(out = "photos", albumId = null)
+        Files.write(Path.of(complete.outputs.last().path), byteArrayOf(1))
+        assertEquals("CONFLICT", MediaDeletion(root).retireAlbumLayouts(1, key()).status)
+        assertTrue(old.outputs.all { Files.exists(Path.of(it.path)) })
+        assertTrue(Files.exists(Path.of(partial.outputs.first().path)))
+    }
+
+    @Test fun migrationJournalRetriesModifiedOldFilesAndCloudDeletionConsumesPendingMigration() {
+        val old = publishLayout()
+        val current = publishLayout(out = "photos", albumId = null)
+        val changed = Path.of(old.outputs.first().path)
+        Files.write(changed, jpeg + byteArrayOf(9))
+        val cleanup = MediaDeletion(root)
+        assertEquals("CONFLICT", cleanup.retireAlbumLayouts(1, key()).status)
+        assertEquals(setOf(key()), cleanup.legacyLayoutGroups(1), "detached receipts must remain discoverable through the journal")
+        assertTrue(current.outputs.all { Files.isRegularFile(Path.of(it.path)) })
+        Files.write(changed, jpeg)
+        assertEquals("DELETED", cleanup.retireAlbumLayouts(1, key()).status)
+        assertFalse(Files.exists(changed))
+        val again = publishLayout(out = "another-old")
+        val oldAgain = Path.of(again.outputs.first().path)
+        Files.write(oldAgain, jpeg + byteArrayOf(3))
+        assertEquals("CONFLICT", cleanup.retireAlbumLayouts(1, key()).status)
+        Files.write(oldAgain, jpeg)
+        assertEquals("DELETED", cleanup.delete(1, key()).status)
+        assertFalse(Files.exists(oldAgain))
+        assertTrue(current.outputs.none { Files.exists(Path.of(it.path)) })
+        assertTrue(cleanup.legacyLayoutGroups(1).isEmpty())
+    }
+
+    @Test fun photosMigrationKeepsOtherTasksReferencesUntilTheyAreReleased() {
+        val old = publishLayout()
+        publishLayout(task = 2)
+        val current = publishLayout(out = "photos", albumId = null)
+        val cleanup = MediaDeletion(root)
+        assertEquals("DEFERRED", cleanup.retireAlbumLayouts(1, key()).status)
+        assertTrue(old.outputs.all { Files.exists(Path.of(it.path)) })
+        assertTrue(current.outputs.all { Files.exists(Path.of(it.path)) })
+        assertEquals("DELETED", cleanup.delete(2, key()).status)
+        assertEquals("DELETED", cleanup.retireAlbumLayouts(1, key()).status)
+        assertTrue(current.outputs.all { Files.exists(Path.of(it.path)) })
+    }
+
+    @Test fun photosMigrationReleasesOldReceiptWhenTheTemplateAlreadyMatchesTheNewPath() {
+        publishLayout(out = "same")
+        val current = publishLayout(out = "same", albumId = null)
+        val cleanup = MediaDeletion(root)
+        assertEquals("DELETED", cleanup.retireAlbumLayouts(1, key()).status)
+        assertTrue(current.outputs.all { Files.isRegularFile(Path.of(it.path)) })
+        assertTrue(cleanup.legacyLayoutGroups(1).isEmpty())
+    }
+
 }

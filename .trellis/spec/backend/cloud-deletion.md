@@ -7,6 +7,9 @@ Cloud-to-local photo/video retention. Xiaomi FULL/TIMELINE and iCloud FULL/CURSO
 `CloudDeletionService.replaceSnapshot(task, albums, timeline?, zone?, records?)` commits a complete selected inventory inside the caller's transaction. `applyPage(task, ICloudChangePage)` updates affected record memberships. `deletedGroups(task)` returns selected/history groups absent from the committed union. `AssetService.refreshMirrorInventory` performs strict full/timeline enumeration; iCloud mirror cursor uses `refreshICloudAssetsByCursor` and `commitICloudPage`.
 
 ## Contracts
+
+`PUT /api/crontab/{id}` compares loaded `syncMode` and `config.syncCloudDeletes` against persisted values inside an IMMEDIATE transaction before saving. Actual changes return HTTP400 with no partial update; omitted or identical fields are accepted. `config.synologyPhotos` may change false→true but never true→false. Missing legacy booleans default false. Other config fields and album selection remain editable. No migration of existing modes is implicit.
+
 Private `mirror_inventory` stores task ID, per-album group keys and an exactly matched optional Xiaomi timeline. `mirror_members` is an indexed projection maintained by SQLite triggers in the same transaction, including rollback and deletion. Neither is exposed in API fetchers. Absence never mutates account-wide `Asset.cloudDeleted`; backups ignore legacy global flags. Publication SQL and under-lock checks use task+album membership. Missing inventory fails closed. Audio retains its existing backup path.
 
 FULL mirror strictly enumerates all selected albums once, then compares the complete union without recycle-bin or whole-library confirmation. Xiaomi TIMELINE first establishes a complete inventory. Same indexHash reuses the album inventory; changed hash enumerates all current nonempty dates and replaces the complete album inventory. Count decreases, equal-count replacements and whole-day removal must work. Capture timeline before enumeration; commit only after all pages succeed. Failures preserve last complete inventory, skip cleanup and publication, and do not advance the baseline.
@@ -19,6 +22,8 @@ Cleanup retries committed absence, including old histories after selection chang
 | Input / condition | Required result |
 | --- | --- |
 | Xiaomi CURSOR mirror create/update | HTTP400; no changed settings |
+| Update scan/retention or disable saved Photos | HTTP400; entire update rejected |
+| Same modes, omitted mode fields, or enable Photos | Save other editable settings; scan/retention remain unchanged |
 | Successful empty full or timeline inventory | Remove owned absent groups |
 | Present in another selected album | Retain, publish current membership |
 | Present only outside selected scope | Remove this task's managed files |
@@ -33,6 +38,9 @@ Cleanup retries committed absence, including old histories after selection chang
 Good: a photo removed from all selected albums is absent only for this mirror task; another task's backup remains available. Base: backup imports observed additions/updates and retains removed photos. Bad: querying recycle bins to override complete selected absence, mutating global flags for task absence, or using an interrupted enumeration as a new baseline.
 
 ## Tests Required
+
+Mode regressions cover Xiaomi FULL/TIMELINE/CURSOR backup and supported mirror combinations, iCloud updates, defaulted legacy booleans, identical/omitted mode fields, one-way Photos, editable scope/performance and rejected updates preserving all fields.
+
 Use real SQLite/Flyway, synthetic provider HTTP and temporary files for task/account/zone scope, migration, indexed projection, rollback, current memberships, full and timeline absence, empty dates, unchanged hashes, cursor deletion/restore and relation changes. Keep ownership/path/hash conflict and retry tests. Run JDK25 clean compileKotlin test apiE2eJvm and frontend yarn lint/format/build. Synthetic tests do not prove real Apple destructive event delivery; never mutate real cloud media without user authorization.
 
 ## Wrong vs Correct
