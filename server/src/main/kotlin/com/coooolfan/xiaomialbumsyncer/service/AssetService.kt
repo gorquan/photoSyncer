@@ -180,21 +180,54 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
         }
     }
 
-    fun refreshICloudAssetsByCursor(crontab: Crontab, history: CrontabHistory, baseline: Map<String, String>) {
+    fun refreshICloudAssetsByCursor(
+        crontab: Crontab, history: CrontabHistory, baseline: Map<String, String>,
+        deletion: CloudDeletionService? = null, recordDeletion: (CloudDeletionResult) -> Unit = {},
+    ): Boolean {
         val albums = crontabAlbums(crontab)
         refreshICloudAlbumCounts(albums)
+        val mirror = deletion?.enabled(crontab) == true
         val cursors = baseline.toMutableMap()
+        var allEstablished = true
         for ((zone, selected) in albums.groupBy { ICloudAlbumKey.decode(it.remoteKey).zone }) {
-            // 相册范围改变后建立新基线；账号之间、任务之间不共享同步进度。
-            val key = "icloud:${crontab.accountId}:$zone:${selected.map { it.id }.sorted().joinToString(",")}"
-            icloud.fetchIncremental(selected, baseline[key], { media.saveAssets(it, authoritativeAppleRoles = true) }) { token ->
-                cursors[key] = token
+            // Mirror needs its own baseline because backup cursors ignored deletion events.
+            val key = "icloud:${crontab.accountId}:$zone:${selected.map { it.id }.sorted().joinToString(",")}" +
+                if (mirror) ":mirror-v1" else ""
+            var revision = media.observationRevision(crontab.accountId)
+            val established = icloud.fetchIncrementalPages(selected, baseline[key], mirror,
+                saveBaseline = { media.saveAssets(it, authoritativeAppleRoles = true) },
+                baselineReady = { observed ->
+                    if (mirror) recordDeletion(requireNotNull(deletion).reconcileBaseline(crontab, zone, observed))
+                },
+                beforePage = { revision = media.observationRevision(crontab.accountId) },
+                consume = { page -> commitICloudPage(crontab, history, key, cursors, page, deletion, revision, recordDeletion) },
+            )
+            allEstablished = allEstablished && established
+        }
+        return allEstablished
+    }
+
+    internal fun commitICloudPage(
+        crontab: Crontab, history: CrontabHistory, key: String, cursors: MutableMap<String, String>,
+        page: com.coooolfan.xiaomialbumsyncer.icloud.ICloudChangePage,
+        deletion: CloudDeletionService?, expectedRevision: Long? = null, recordDeletion: (CloudDeletionResult) -> Unit,
+    ) {
+        val next = cursors + (key to page.cursor)
+        synchronized(media) {
+            require(expectedRevision == null || media.observationRevision(crontab.accountId) == expectedRevision) {
+                "iCloud 变化确认期间有其他同步更新了账号，请重试；本页位点未推进"
+            }
+            sql.transaction {
+                // Apply presence first so restoration counts retain the previous tombstone state.
+                if (deletion?.enabled(crontab) == true) recordDeletion(deletion.applyStates(crontab, page.zone, page.presence))
+                media.saveAssets(page.assets, authoritativeAppleRoles = true)
                 sql.executeUpdate(CrontabHistory::class) {
-                    set(table.syncCursors, cursors.toMap())
+                    set(table.syncCursors, next)
                     where(table.id eq history.id)
                 }
             }
         }
+        cursors[key] = page.cursor
     }
 
     private fun refreshICloudAlbumCounts(albums: List<Album>) {

@@ -83,6 +83,17 @@ watch(
   { immediate: true },
 )
 
+const mirrorSupported = computed(
+  () => selectedAccount.value?.provider !== 'XIAOMI' || form.value.syncMode !== 'CURSOR',
+)
+watch(
+  mirrorSupported,
+  (supported) => {
+    if (!supported) form.value.config = { ...form.value.config, syncCloudDeletes: false }
+  },
+  { immediate: true },
+)
+
 const recommendedMode = computed<CrontabSyncMode>(() =>
   isICloud.value ? 'CURSOR' : hasRecordingAlbum.value ? 'FULL' : 'TIMELINE',
 )
@@ -353,7 +364,7 @@ watch(
                 {{ t('cronform.retention.title') }}
               </legend>
               <label
-                v-for="mirror in [false, true]"
+                v-for="mirror in mirrorSupported ? [false, true] : [false]"
                 :key="String(mirror)"
                 :for="mirror ? 'retention-mirror' : 'retention-backup'"
                 class="flex cursor-pointer items-start gap-3 rounded-lg border p-3"
@@ -379,6 +390,9 @@ watch(
                   }}</span>
                 </span>
               </label>
+              <p v-if="!mirrorSupported" class="text-[12px] text-slate-500 dark:text-slate-400">
+                {{ t('cronform.retention.xiaomiCursorBackupOnly') }}
+              </p>
             </fieldset>
 
             <div class="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">

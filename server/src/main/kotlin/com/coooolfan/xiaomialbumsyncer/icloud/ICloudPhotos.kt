@@ -127,9 +127,6 @@ class ICloudPhotos(private val accounts: ICloudAccountService) {
         return total
     }
 
-    fun fetchAssetsForDeletionCheck(album: Album, handler: (List<Asset>) -> Unit): Long =
-        accounts.withClient(album.accountId) { fetchAssets(album, it, strict = true, handler = handler) }
-
     fun probePresence(accountId: Long, zone: String, recordName: String): CloudPresence =
         accounts.withClient(accountId) { client ->
             parseICloudPresence(client.cloud("records/lookup", mapOf("zoneID" to zoneId(zone),
@@ -140,6 +137,19 @@ class ICloudPhotos(private val accounts: ICloudAccountService) {
         require(albums.isNotEmpty())
         accounts.withClient(albums.first().accountId) { client ->
             fetchIncremental(albums, client, cursor, handler, commitCursor)
+        }
+    }
+
+    fun fetchIncrementalPages(
+        albums: List<Album>, cursor: String?, mirror: Boolean,
+        saveBaseline: (List<Asset>) -> Unit,
+        baselineReady: (Set<String>) -> Unit,
+        beforePage: () -> Unit = {},
+        consume: (ICloudChangePage) -> Unit,
+    ): Boolean {
+        require(albums.isNotEmpty())
+        return accounts.withClient(albums.first().accountId) { client ->
+            fetchIncrementalPages(albums, client, cursor, mirror, saveBaseline, baselineReady, beforePage, consume)
         }
     }
 
@@ -289,7 +299,10 @@ internal fun parseICloudPresence(response: JsonNode, recordName: String): CloudP
     require(records.isArray && records.size() == 1 && records[0].path("recordName").asText() == recordName) {
         "iCloud 资产状态查询响应不完整"
     }
-    val record = records[0]
+    return parseICloudPresenceRecord(records[0])
+}
+
+internal fun parseICloudPresenceRecord(record: JsonNode): CloudPresence {
     val error = record.path("serverErrorCode").asText()
     if (error in setOf("NOT_FOUND", "UNKNOWN_ITEM")) return CloudPresence.DELETED
     require(error.isBlank()) { "iCloud 资产状态查询失败：$error" }
@@ -302,7 +315,7 @@ internal fun parseICloudPresence(response: JsonNode, recordName: String): CloudP
     return CloudPresence.LIVE
 }
 
-private fun iCloudDeletionFlag(flag: JsonNode): Boolean {
+internal fun iCloudDeletionFlag(flag: JsonNode): Boolean {
     if (flag.isMissingNode || flag.isNull) return false
     require(flag.isBoolean || flag.isIntegralNumber && flag.asLong() in 0L..1L) { "iCloud 删除标识无效" }
     return flag.asBoolean()

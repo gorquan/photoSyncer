@@ -29,6 +29,39 @@ class MediaDeletionServiceTest {
     private val directory get() = temporary.toRealPath()
     private val jpeg by lazy { ByteArrayOutputStream().also { ImageIO.write(BufferedImage(2, 3, BufferedImage.TYPE_INT_RGB), "jpg", it) }.toByteArray() }
 
+    @Test fun cursorMirrorCommitsPresenceThenCleansFilesAndRestoresWithoutAnArchive() = withStore { sql, media, detail ->
+        val root = directory.resolve("cursor-media")
+        val identity = MediaIdentity.of(detail.asset)
+        val task = Crontab(detail.crontabHistory.crontab) { albumIds = listOf(detail.asset.album.id); syncMode = CrontabSyncMode.CURSOR }
+        val history = detail.crontabHistory
+        val key = "mirror-test"
+        val cursors = mutableMapOf(key to "before")
+        val notify = NotifyService(sql)
+        val icloud = ICloudPhotos(ICloudAccountService(sql, notify))
+        val deletion = CloudDeletionService(sql, XiaoMiApi(TokenManager(sql, notify)), icloud, media)
+        val assets = AssetService(sql, XiaoMiApi(TokenManager(sql, notify)), media, icloud)
+        fun publish() = MediaPublisher(root).publish("${task.id}/${identity.groupKey}", task.config.targetPath, "v", listOf(detail),
+            { _, path -> Files.write(path, jpeg); true }, { _, _ -> })
+        val output = Path.of(publish().outputs.single().path)
+        assertTrue(Files.exists(output))
+        assets.commitICloudPage(task, history, key, cursors, ICloudChangePage(identity.zone, "deleted", emptyList(), mapOf(identity.record to CloudPresence.DELETED)), deletion) {
+            CrontabService(sql).accumulateDeletionReport(history, it)
+        }
+        assertEquals("deleted", sql.findById(CrontabHistory::class, history.id)!!.syncCursors!![key])
+        assertTrue(Files.exists(output), "checkpoint persistence does not delete files")
+        val cleanup = MediaDeletionService(sql)
+        deletion.confirmPending(task) { CloudPresence.DELETED }
+        val deleted = cleanup.cleanup(task, deletion.deletedGroups(task), root).single()
+        assertEquals(1, deleted.exportsDeleted)
+        assertFalse(Files.exists(output))
+        assertTrue(cleanup.cleanup(task, deletion.deletedGroups(task), root).all { it.exportsDeleted == 0 })
+        assets.commitICloudPage(task, history, key, cursors, ICloudChangePage(identity.zone, "restored", listOf(detail.asset), mapOf(identity.record to CloudPresence.LIVE)), deletion) {}
+        assertTrue(deletion.deletedGroups(task).isEmpty())
+        publish()
+        assertArrayEquals(jpeg, Files.readAllBytes(output))
+        assertFalse(Files.exists(root.resolve("originals")))
+    }
+
     @Test fun photosSwitchControlsByteChangingMetadataProcessing() = withStore { _, _, detail ->
         val marker = directory.resolve("exif-called")
         val tool = directory.resolve("exiftool")

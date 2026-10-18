@@ -874,10 +874,10 @@ class ApiE2eSuite {
         api.delete("/api/crontab/$crontabId").expect(200)
     }
 
-    /** Synthetic cloud only: single-copy exports mirror confirmed deletion in every sync mode. */
+    /** Synthetic cloud only: single-copy exports mirror confirmed deletion in full and timeline modes. */
     private fun executeCloudDeletionWorkflow(api: ApiClient, mock: MockXiaomiApiServer, workDir: Path,
                                             accountId: Long, baseConfig: LinkedHashMap<String, Any?>) {
-        for ((index, mode) in listOf("FULL", "TIMELINE", "CURSOR").withIndex()) {
+        for ((index, mode) in listOf("FULL", "TIMELINE").withIndex()) {
             val remoteAlbum = 70 + index
             val remoteAsset = 700 + index
             fun mutate(operation: Map<String, Any?>) = mock.mutate(mapOf("operations" to listOf(mapOf("userId" to "mock-user") + operation)))
@@ -894,6 +894,7 @@ class ApiE2eSuite {
             val task = api.json(api.post("/api/crontab", mapOf("name" to "Mirror $mode", "description" to "Managed deletion",
                 "enabled" to false, "syncMode" to mode, "config" to config, "accountId" to accountId,
                 "albumIds" to listOf(albumId))).expect(200)).path("id").asLong()
+            api.put("/api/crontab/$task", mapOf("syncMode" to "CURSOR")).expect(400)
             var previous: Long? = null
             fun run(): JsonNode {
                 api.post("/api/crontab/$task/executions").expect(200)
@@ -961,7 +962,25 @@ class ApiE2eSuite {
             assertEquals("FAILED", publicGroup.path("executionStatus").asText())
             api.delete("/api/crontab/$task").expect(200)
         }
-        assertTrue(mock.routeCount("/gallery/deleted_v2") >= 3)
+        val albumId = findAlbumId(api.json(api.get("/api/album/latest/$accountId").expect(200)), "1")
+        val beforeDeleted = mock.routeCount("/gallery/deleted_v2")
+        for (mode in listOf("CURSOR")) {
+            val config = LinkedHashMap(baseConfig).apply {
+                this["syncCloudDeletes"] = true; this["synologyPhotos"] = true
+                this["targetPath"] = workDir.resolve("retention-$mode").toString()
+            }
+            val request = mapOf("name" to "Retention $mode", "description" to "", "enabled" to false,
+                "syncMode" to mode, "config" to config, "accountId" to accountId, "albumIds" to listOf(albumId))
+            val rejected = api.post("/api/crontab", request)
+            assertEquals(400, rejected.status, rejected.body)
+            config["syncCloudDeletes"] = false
+            val task = api.json(api.post("/api/crontab", request).expect(200)).path("id").asLong()
+            config["syncCloudDeletes"] = true
+            val update = api.put("/api/crontab/$task", mapOf("config" to config))
+            assertEquals(400, update.status, update.body)
+            api.delete("/api/crontab/$task").expect(200)
+        }
+        assertEquals(beforeDeleted, mock.routeCount("/gallery/deleted_v2"))
     }
 
     /** Count decreases and same-count replacements must still import newly observed records. */

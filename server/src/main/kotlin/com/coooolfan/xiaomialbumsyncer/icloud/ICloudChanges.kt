@@ -2,14 +2,37 @@ package com.coooolfan.xiaomialbumsyncer.icloud
 
 import com.coooolfan.xiaomialbumsyncer.model.Album
 import com.coooolfan.xiaomialbumsyncer.model.Asset
+import com.coooolfan.xiaomialbumsyncer.model.CloudPresence
 import com.fasterxml.jackson.databind.JsonNode
 import org.slf4j.LoggerFactory
+
+/** A page is acknowledged only after assets, presence and its cursor have committed together. */
+data class ICloudChangePage(
+    val zone: String,
+    val cursor: String,
+    val assets: List<Asset>,
+    val presence: Map<String, CloudPresence>,
+)
 
 /** CloudKit 图库变更流；协议参考 kei 的 syncToken 文档（见 THIRD_PARTY_NOTICES）。 */
 internal fun ICloudPhotos.fetchIncremental(
     albums: List<Album>, client: ICloudClient, cursor: String?,
     handler: (List<Asset>) -> Unit, commitCursor: (String) -> Unit,
 ) {
+    fetchIncrementalPages(albums, client, cursor, false, handler, {}) { page ->
+        handler(page.assets)
+        commitCursor(page.cursor)
+    }
+}
+
+internal fun ICloudPhotos.fetchIncrementalPages(
+    albums: List<Album>, client: ICloudClient, cursor: String?, mirror: Boolean,
+    saveBaseline: (List<Asset>) -> Unit,
+    baselineReady: (Set<String>) -> Unit,
+    beforePage: () -> Unit = {},
+    consume: (ICloudChangePage) -> Unit,
+): Boolean {
+    var established = false
     val albumKeys = albums.associate { it.id to ICloudAlbumKey.decode(it.remoteKey) }
     val zone = albumKeys.getValue(albums.first().id).zone
     require(albums.all { it.accountId == albums.first().accountId && albumKeys.getValue(it.id).zone == zone })
@@ -23,16 +46,23 @@ internal fun ICloudPhotos.fetchIncremental(
                     mapOf("fieldName" to "direction", "comparator" to "EQUALS", "fieldValue" to mapOf("type" to "STRING", "value" to "ASCENDING"))))))
             .path("syncToken").asText()
         require(token.isNotBlank()) { "iCloud 未返回同步位点，无法建立增量基线" }
-        albums.forEach { fetchAssets(it, client, handler = handler) }
+        val observed = mutableSetOf<String>()
+        albums.forEach { album -> fetchAssets(album, client, strict = mirror) { rows ->
+            observed += rows.map { ICloudResourceKey.decode(it.remoteKey).assetId }
+            saveBaseline(rows)
+        } }
+        baselineReady(observed)
+        established = true
         return token
     }
     try {
-        readChanges(albums, albumKeys, client, cursor?.takeIf { it.isNotBlank() } ?: establishBaseline(), handler, commitCursor)
+        readChanges(albums, albumKeys, client, cursor?.takeIf { it.isNotBlank() } ?: establishBaseline(), mirror, beforePage, consume)
     } catch (e: InvalidICloudCursor) {
         if (cursor.isNullOrBlank()) throw e
         LoggerFactory.getLogger(ICloudPhotos::class.java).warn("iCloud 图库 {} 位点失效，重新建立全量基线", zone)
-        readChanges(albums, albumKeys, client, establishBaseline(), handler, commitCursor)
+        readChanges(albums, albumKeys, client, establishBaseline(), mirror, beforePage, consume)
     }
+    return established
 }
 
 private class InvalidICloudCursor : RuntimeException("iCloud 同步位点失效")
@@ -40,7 +70,7 @@ private val expiredCursorCodes = setOf("CHANGE_TOKEN_EXPIRED", "SYNC_TOKEN_EXPIR
 
 private fun ICloudPhotos.readChanges(
     albums: List<Album>, albumKeys: Map<Long, ICloudAlbumKey>, client: ICloudClient, initial: String,
-    handler: (List<Asset>) -> Unit, commitCursor: (String) -> Unit,
+    mirror: Boolean, beforePage: () -> Unit, consume: (ICloudChangePage) -> Unit,
 ) {
     val zone = albumKeys.getValue(albums.first().id).zone
     val userAlbums = albums.filter { !albumKeys.getValue(it.id).albumId.startsWith("__") }
@@ -48,6 +78,7 @@ private fun ICloudPhotos.readChanges(
     var token = initial
     val seen = mutableSetOf(initial)
     while (true) {
+        beforePage()
         val response = try {
             client.cloud("changes/zone", mapOf("zones" to listOf(mapOf(
                 "zoneID" to mapOf("zoneName" to zone), "syncToken" to token, "resultsLimit" to 200))))
@@ -64,13 +95,34 @@ private fun ICloudPhotos.readChanges(
                 throw InvalidICloudCursor()
             throw ICloudApiException(503, error)
         }
-        val next = page.path("syncToken").asText()
-        require(next.isNotBlank()) { "iCloud 变更响应缺少同步位点" }
+        require(page.at("/zoneID/zoneName").asText() == zone) { "iCloud 变化响应属于其他图库" }
+        val nextToken = page.path("syncToken")
+        require(nextToken.isTextual && nextToken.asText().isNotBlank()) { "iCloud 变更响应缺少同步位点" }
+        val next = nextToken.asText()
         val more = page.path("moreComing")
         require(more.isBoolean && page.path("records").isArray) { "iCloud 图库变更响应不完整" }
         if (more.asBoolean()) require(seen.add(next)) { "iCloud 变更分页位点没有推进" }
         val records = page.path("records").toList()
-        val assets = records.filter { it.path("recordType").asText() == "CPLAsset" }.associateBy { it.path("recordName").asText() }.toMutableMap()
+        require(records.all { it.path("recordName").asText().isNotBlank() && it.path("serverErrorCode").asText().isBlank() }) {
+            "iCloud 变化记录不完整"
+        }
+        // Tombstones can omit recordType. Relation tombstones do not imply library deletion.
+        val candidates = if (mirror) records.filter {
+            it.path("recordType").asText() == "CPLAsset" ||
+                it.path("recordType").asText().isBlank() && !live(it)
+        }.map { it.path("recordName").asText() }.distinct() else emptyList()
+        val current = lookupPresenceRecords(client, zone, candidates)
+        val presence = current.filterNot {
+            // An untyped relation tombstone may have been restored since its event was emitted.
+            it.path("recordType").asText() in setOf("CPLContainerRelation", "CPLMaster", "CPLAlbum") &&
+                it.path("serverErrorCode").asText().isBlank() && live(it)
+        }.associate { record ->
+            val name = record.path("recordName").asText()
+            name to parseICloudPresenceRecord(record)
+        }
+        val source = if (mirror) records.filterNot { it.path("recordName").asText() in presence } +
+            current.filter { presence[it.path("recordName").asText()] == CloudPresence.LIVE } else records
+        val assets = source.filter { it.path("recordType").asText() == "CPLAsset" }.associateBy { it.path("recordName").asText() }.toMutableMap()
         val addedMembers = records.filter { it.path("recordType").asText() == "CPLContainerRelation" && live(it) }
             .filter { field(it, "containerId").asText() in selectedContainers }
             .map { field(it, "itemId").asText().also { id -> require(id.isNotBlank()) { "iCloud 相册成员缺少资产标识" } } }
@@ -109,13 +161,24 @@ private fun ICloudPhotos.readChanges(
                 }
             }.flatMap { parseResources(it, asset, master) }
         }
-        handler(rows)
-        // 只有该页所有资产已持久化后才能提交；空页仍依据 moreComing 继续。
-        commitCursor(next)
+        // The consumer atomically saves the page with its checkpoint. Empty pages still advance.
+        consume(ICloudChangePage(zone, next, rows, presence))
         token = next
         if (!more.asBoolean()) break
     }
 }
 
-private fun live(record: JsonNode): Boolean = !record.path("deleted").asBoolean() &&
-    !field(record, "isDeleted").asBoolean() && !field(record, "isExpunged").asBoolean()
+private fun live(record: JsonNode): Boolean = !iCloudDeletionFlag(record.path("deleted")) &&
+    !iCloudDeletionFlag(field(record, "isDeleted")) && !iCloudDeletionFlag(field(record, "isExpunged"))
+
+private fun lookupPresenceRecords(client: ICloudClient, zone: String, names: List<String>): List<JsonNode> =
+    names.chunked(200).flatMap { batch ->
+        val response = client.cloud("records/lookup", mapOf("zoneID" to mapOf("zoneName" to zone),
+            "records" to batch.map { mapOf("recordName" to it) }))
+        val records = response.path("records")
+        require(records.isArray && records.size() == batch.size &&
+            records.map { it.path("recordName").asText() }.toSet() == batch.toSet()) {
+            "iCloud 变化状态查询响应不完整"
+        }
+        records.toList()
+    }

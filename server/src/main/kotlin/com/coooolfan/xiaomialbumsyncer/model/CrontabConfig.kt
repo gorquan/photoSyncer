@@ -48,7 +48,7 @@ data class CrontabConfig(
     /** Use targetPath as a literal root, with account/zone isolated, album-independent files. */
     val synologyPhotos: Boolean = false,
 
-    /** Permanently remove owned exports and originals after authoritative cloud deletion. */
+    /** Mirror confirmed library deletion: Xiaomi FULL/TIMELINE or iCloud FULL/CURSOR. */
     val syncCloudDeletes: Boolean = false,
 ) {
     init {
