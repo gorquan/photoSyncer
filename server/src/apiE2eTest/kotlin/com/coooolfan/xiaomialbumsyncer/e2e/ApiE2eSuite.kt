@@ -189,6 +189,8 @@ class ApiE2eSuite {
 
         executeMcpWorkflow(api, crontabId, historyId)
 
+        val downloadsBeforeMigration = mock.routeCount("/mock/download/101")
+        val storageBeforeMigration = mock.routeCount("/gallery/storage")
         val beforeMigration = api.json(api.get("/api/crontab").expect(200)).first { it.path("id").asLong() == crontabId }
             .path("histories").maxOf { it.path("id").asLong() }
         api.put("/api/crontab/$crontabId", mapOf("config" to (config + mapOf("synologyPhotos" to true)))).expect(200)
@@ -200,6 +202,8 @@ class ApiE2eSuite {
         assertEquals("PUBLISHED", migratedDetails.first().path("publicationStatus").asText())
         assertTrue(Files.isRegularFile(migratedFile))
         assertFalse(Files.exists(downloadedFile), "verified replacement must retire the old album-layout file")
+        assertEquals(downloadsBeforeMigration, mock.routeCount("/mock/download/101"), "Photos migration must reuse verified local originals")
+        assertEquals(storageBeforeMigration, mock.routeCount("/gallery/storage"), "local migration must not request fresh download URLs")
 
         api.delete("/api/crontab/$crontabId/histories").expect(200)
         val historiesAfterClear = api.json(api.get("/api/crontab").expect(200))

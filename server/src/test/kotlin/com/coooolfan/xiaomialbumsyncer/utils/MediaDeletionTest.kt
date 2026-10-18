@@ -263,8 +263,8 @@ class MediaDeletionTest {
         val first = publishLayout(out = "old-one")
         val second = publishLayout(out = "old-two", albumId = 2)
         val cleanup = MediaDeletion(root)
-        assertEquals(setOf(key()), cleanup.legacyLayoutGroups(1))
-        assertTrue(cleanup.legacyLayoutGroups(2).isEmpty())
+        assertEquals(setOf(key()), cleanup.legacyLayouts(1).keys)
+        assertTrue(cleanup.legacyLayouts(2).isEmpty())
         assertEquals("CONFLICT", cleanup.retireAlbumLayouts(1, key()).status)
         assertTrue((first.outputs + second.outputs).all { Files.exists(Path.of(it.path)) })
         val current = publishLayout(out = "photos", albumId = null)
@@ -273,7 +273,7 @@ class MediaDeletionTest {
         assertTrue((first.outputs + second.outputs).none { Files.exists(Path.of(it.path)) })
         assertTrue(current.outputs.all { Files.isRegularFile(Path.of(it.path)) })
         assertTrue(Files.exists(unowned))
-        assertTrue(cleanup.legacyLayoutGroups(1).isEmpty())
+        assertTrue(cleanup.legacyLayouts(1).isEmpty())
         assertEquals(0, cleanup.retireAlbumLayouts(1, key()).exportsDeleted)
         assertFalse(Files.exists(root.resolve("originals")))
     }
@@ -297,7 +297,8 @@ class MediaDeletionTest {
         Files.write(changed, jpeg + byteArrayOf(9))
         val cleanup = MediaDeletion(root)
         assertEquals("CONFLICT", cleanup.retireAlbumLayouts(1, key()).status)
-        assertEquals(setOf(key()), cleanup.legacyLayoutGroups(1), "detached receipts must remain discoverable through the journal")
+        assertEquals(setOf(key()), cleanup.legacyLayouts(1).keys, "detached receipts must remain discoverable through the journal")
+        assertEquals(listOf(old), cleanup.legacyLayouts(1)[key()], "journal must retain local input evidence")
         assertTrue(current.outputs.all { Files.isRegularFile(Path.of(it.path)) })
         Files.write(changed, jpeg)
         assertEquals("DELETED", cleanup.retireAlbumLayouts(1, key()).status)
@@ -310,7 +311,7 @@ class MediaDeletionTest {
         assertEquals("DELETED", cleanup.delete(1, key()).status)
         assertFalse(Files.exists(oldAgain))
         assertTrue(current.outputs.none { Files.exists(Path.of(it.path)) })
-        assertTrue(cleanup.legacyLayoutGroups(1).isEmpty())
+        assertTrue(cleanup.legacyLayouts(1).isEmpty())
     }
 
     @Test fun photosMigrationKeepsOtherTasksReferencesUntilTheyAreReleased() {
@@ -332,7 +333,7 @@ class MediaDeletionTest {
         val cleanup = MediaDeletion(root)
         assertEquals("DELETED", cleanup.retireAlbumLayouts(1, key()).status)
         assertTrue(current.outputs.all { Files.isRegularFile(Path.of(it.path)) })
-        assertTrue(cleanup.legacyLayoutGroups(1).isEmpty())
+        assertTrue(cleanup.legacyLayouts(1).isEmpty())
     }
 
 }

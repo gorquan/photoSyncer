@@ -408,7 +408,7 @@ const messages: typeof zh = {
         'Synology Photos compatibility is enabled for this plan and cannot be turned off.',
       synologyPhotosEnableTitle: 'Enable Synology Photos compatibility',
       synologyPhotosEnableHint:
-        'Once enabled and saved, this cannot be turned off. The next sync validates new files in the Photos layout before removing this plan’s corresponding old files. Failures keep old files for retry. Modified or shared files are retained and reported. Use a fixed target root; path templates are not supported.',
+        'Once enabled and saved, this cannot be turned off. The next sync adapts verified local originals, downloading only missing, corrupt or changed versions. It validates the new Photos files before removing this plan’s corresponding old files. Failures keep old files for retry. Modified or shared files are retained and reported. Use a fixed target root; path templates are not supported.',
       synologyPhotosHint:
         'On: use a fixed export root with provider, account and library folders. Apple Live Photo components share a basename; Xiaomi motion photos retain their original structure.',
       synologyPhotosOffHint:
