@@ -38,6 +38,8 @@ class SynologySelectionTest {
         val native = Crontab(job) { config = job.config.copy(synologyPhotos = false) }
         assertEquals(2, service.getAssetsUndownloadByCrontab(native, 10, 0).size)
         assertEquals(2L, service.countAssetsForPublication(native))
+        assertEquals(2, service.publicationGroup(native, selected.single(), acrossAlbums = true).size,
+            "restoring originals must cover every selected album membership")
         // Different remote records with identical bytes remain separate assets.
         media.saveAssets(listOf(image(albums[0], "A", "different")))
         assertEquals(2, service.getAssetsUndownloadByCrontab(job, 10, 0).size)
@@ -112,6 +114,9 @@ class SynologySelectionTest {
         assertEquals(setOf("remote-1", "remote-2"), selected.map { it.remoteKey }.toSet())
         assertEquals(2, selected.size)
         assertEquals(2L, service.countAssetsForPublication(job(albums)))
+        val native = Crontab(job(albums)) { config = job(albums).config.copy(synologyPhotos = false) }
+        val overlapping = service.getAssetsUndownloadByCrontab(native, 10, 0).first { it.remoteKey == "remote-1" }
+        assertEquals(2, service.publicationGroup(native, overlapping, acrossAlbums = true).size)
         assertNotEquals(MediaIdentity.of(selected[0]).stem, MediaIdentity.of(selected[1]).stem)
         media.saveAssets(listOf(Asset(native(albums[0], "remote-audio")) { type = AssetType.AUDIO }))
         assertEquals(3L, service.countAssetsForPublication(job(albums)))

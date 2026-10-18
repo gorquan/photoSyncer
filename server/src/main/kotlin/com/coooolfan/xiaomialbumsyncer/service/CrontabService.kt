@@ -147,8 +147,6 @@ class CrontabService(private val sql: KSqlClient) {
             val config = if (ImmutableObjects.isLoaded(crontab, "config")) crontab.config else existing.config
             if (config.syncCloudDeletes != existing.config.syncCloudDeletes)
                 throw BadRequestException("计划创建后不能切换备份／镜像模式，请新建计划")
-            if (existing.config.synologyPhotos && !config.synologyPhotos)
-                throw BadRequestException("计划启用群晖 Photos 适配后不能关闭，请新建计划")
             validateSyncConfig(existing.accountId, existing.syncMode, config)
             sql.saveCommand(crontab, SaveMode.UPDATE_ONLY).execute(fetcher).modifiedEntity
         }

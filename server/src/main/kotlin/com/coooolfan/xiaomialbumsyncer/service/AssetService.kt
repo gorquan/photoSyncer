@@ -470,29 +470,33 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
         if (!crontab.config.downloadAudios) where(table.type ne AssetType.AUDIO)
     }
 
-    /** At most one current membership per selected resource; group size is bounded by provider roles. */
-    fun publicationGroup(crontab: Crontab, asset: Asset): List<Asset> {
+    /** Photos deduplicates roles; reverse migration keeps every selected ordinary album membership. */
+    fun publicationGroup(crontab: Crontab, asset: Asset, acrossAlbums: Boolean = false): List<Asset> {
         if (asset.type != AssetType.AUDIO && crontab.config.syncCloudDeletes && !mirrorContains(sql, crontab.id, asset.album.id, MediaIdentity.of(asset).groupKey)) return emptyList()
         val identity = com.coooolfan.xiaomialbumsyncer.utils.MediaIdentity.of(asset)
-        if (identity.provider != CloudProvider.ICLOUD) return listOf(asset)
-        val keys = listOf("resOriginal", "resOriginalAlt", "resOriginalVidCompl").map { "${identity.groupKey}/$it" }
+        if (identity.provider != CloudProvider.ICLOUD && !acrossAlbums) return listOf(asset)
+        val keys = if (identity.provider == CloudProvider.ICLOUD)
+            listOf("resOriginal", "resOriginalAlt", "resOriginalVidCompl").map { "${identity.groupKey}/$it" }
+            else listOf(identity.resourceKey)
+        val albums = if (crontab.config.synologyPhotos || acrossAlbums) crontab.albumIds else listOf(asset.album.id)
         val rows = sql.createQuery(Asset::class) {
-            where(table.albumId valueIn if (crontab.config.synologyPhotos) crontab.albumIds else listOf(asset.album.id))
+            where(table.albumId valueIn albums)
             where(table.currentVersion eq true)
             if (crontab.config.syncCloudDeletes) where(mirrorMembership(table, crontab.id))
             where(table.logicalResourceKey valueIn keys)
             where(notExists(subQuery(Asset::class) {
-                where(table.albumId valueIn if (crontab.config.synologyPhotos) crontab.albumIds else listOf(asset.album.id))
+                where(table.albumId valueIn albums)
                 where(table.currentVersion eq true)
                 if (crontab.config.syncCloudDeletes) where(mirrorMembership(table, crontab.id))
                 where(table.logicalResourceKey eq parentTable.logicalResourceKey)
+                if (!crontab.config.synologyPhotos) where(table.albumId eq parentTable.albumId)
                 where(table.id lt parentTable.id)
                 select(table)
             }))
             orderBy(table.id.asc())
             select(table.fetchBy { allScalarFields(); album { allScalarFields(); account { provider() } } })
-        }.limit(64).execute()
-        return rows.distinctBy { it.logicalResourceKey }.filter {
+        }.execute()
+        return rows.distinctBy { (if (crontab.config.synologyPhotos) "" else "${it.album.id}/") + it.logicalResourceKey }.filter {
             when (it.type) {
                 AssetType.IMAGE -> crontab.config.downloadImages
                 AssetType.VIDEO -> if (com.coooolfan.xiaomialbumsyncer.utils.MediaIdentity.of(it).liveCompanion)

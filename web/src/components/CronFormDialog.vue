@@ -50,7 +50,7 @@ const visibleProxy = computed({
 })
 
 const form = toRef(props, 'form')
-const photosLocked = ref(false)
+const savedPhotos = ref(false)
 const photosSwitchKey = ref(0)
 const formErrors = toRef(props, 'formErrors')
 const accountOptions = computed(() => [...props.accountOptions])
@@ -147,24 +147,32 @@ function selectSyncMode(mode: CrontabSyncMode) {
 }
 
 function setSynologyPhotos(enabled: boolean) {
-  if (photosLocked.value || form.value.config.synologyPhotos === enabled) return
-  if (!enabled) {
-    form.value.config = { ...form.value.config, synologyPhotos: false }
+  if (form.value.config.synologyPhotos === enabled) return
+  if (!props.isEditing || enabled === savedPhotos.value) {
+    form.value.config = { ...form.value.config, synologyPhotos: enabled }
     return
   }
   // ToggleSwitch keeps an internal value; remount it while confirmation is pending.
   photosSwitchKey.value++
   const pendingForm = form.value
   confirm.require({
-    header: t('cronform.toggle.synologyPhotosEnableTitle'),
-    message: t('cronform.toggle.synologyPhotosEnableHint'),
+    header: t(
+      enabled
+        ? 'cronform.toggle.synologyPhotosEnableTitle'
+        : 'cronform.toggle.synologyPhotosDisableTitle',
+    ),
+    message: t(
+      enabled
+        ? 'cronform.toggle.synologyPhotosEnableHint'
+        : 'cronform.toggle.synologyPhotosDisableHint',
+    ),
     icon: 'pi pi-exclamation-triangle',
     rejectLabel: t('common.action.cancel'),
     acceptLabel: t('common.action.confirm'),
     rejectProps: { severity: 'secondary', text: true },
     accept: () => {
       if (props.visible && form.value === pendingForm)
-        form.value.config = { ...form.value.config, synologyPhotos: true }
+        form.value.config = { ...form.value.config, synologyPhotos: enabled }
     },
   })
 }
@@ -209,7 +217,7 @@ watch(
   () => props.visible,
   (val) => {
     if (val) {
-      photosLocked.value = props.isEditing && form.value.config.synologyPhotos === true
+      savedPhotos.value = form.value.config.synologyPhotos === true
       step.value = 'basic'
       slideDir.value = 'slide-left'
       useExpressionPath.value = form.value.config.targetPath.includes('${')
@@ -439,7 +447,6 @@ watch(
                 <ToggleSwitch
                   :key="photosSwitchKey"
                   :modelValue="form.config.synologyPhotos"
-                  :disabled="photosLocked"
                   inputId="synology-photos"
                   @update:modelValue="setSynologyPhotos"
                 />
@@ -450,12 +457,12 @@ watch(
               <p class="text-[12px] text-slate-500 dark:text-slate-400">
                 {{ t('cronform.toggle.synologyPhotosOffHint') }}
               </p>
-              <Message :severity="photosLocked ? 'info' : 'warn'" :closable="false">
+              <Message severity="warn" :closable="false">
                 {{
                   t(
-                    photosLocked
-                      ? 'cronform.toggle.synologyPhotosLockedHint'
-                      : 'cronform.toggle.synologyPhotosEnableHint',
+                    form.config.synologyPhotos
+                      ? 'cronform.toggle.synologyPhotosEnableHint'
+                      : 'cronform.toggle.synologyPhotosDisableHint',
                   )
                 }}
               </Message>

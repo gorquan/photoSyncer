@@ -205,6 +205,18 @@ class ApiE2eSuite {
         assertEquals(downloadsBeforeMigration, mock.routeCount("/mock/download/101"), "Photos migration must reuse verified local originals")
         assertEquals(storageBeforeMigration, mock.routeCount("/gallery/storage"), "local migration must not request fresh download URLs")
 
+        api.put("/api/crontab/$crontabId", mapOf("config" to config)).expect(200)
+        assertTrue(Files.exists(migratedFile), "disabling Photos must preserve exports until originals are restored")
+        api.post("/api/crontab/$crontabId/executions").expect(200)
+        val restoredHistory = awaitCompletedHistory(api, crontabId, afterHistoryId = migratedHistory)
+        val restored = api.json(api.get("/api/crontab/history/$restoredHistory/details?pageIndex=0&pageSize=10").expect(200)).path("rows").first()
+        assertEquals("PUBLISHED", restored.path("publicationStatus").asText())
+        assertEquals(downloadedFile, Path.of(restored.path("filePath").asText()))
+        assertTrue(Files.isRegularFile(downloadedFile))
+        assertFalse(Files.exists(migratedFile), "Photos exports retire only after cloud-original replacement is verified")
+        assertEquals(cameraAssets.first().path("checksum").asText(), java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-1").digest(Files.readAllBytes(downloadedFile))))
+        assertEquals(downloadsBeforeMigration, mock.routeCount("/mock/download/101"), "unchanged Photos bytes must restore locally")
+
         api.delete("/api/crontab/$crontabId/histories").expect(200)
         val historiesAfterClear = api.json(api.get("/api/crontab").expect(200))
             .first { it.path("id").asLong() == crontabId }
@@ -296,10 +308,10 @@ class ApiE2eSuite {
             assertTrue(updated.path("config").path("synologyPhotos").asBoolean())
             assertEquals(2, updated.path("config").path("downloaders").asInt())
             for (disabled in listOf(config, enabled + mapOf("synologyPhotos" to false))) {
-                val result = api.put("/api/crontab/$task", mapOf("description" to "must not save", "config" to disabled))
-                assertEquals(400, result.status, result.body)
-                assertTrue(result.body.contains("不能关闭"), result.body)
+                val result = api.json(api.put("/api/crontab/$task", mapOf("config" to disabled)).expect(200))
+                assertFalse(result.path("config").path("synologyPhotos").asBoolean())
             }
+            api.put("/api/crontab/$task", mapOf("config" to enabled)).expect(200)
             api.put("/api/crontab/$task", mapOf("description" to "edited", "albumIds" to listOf(otherAlbumId))).expect(200)
             val final = saved()
             assertEquals("edited", final.path("description").asText())

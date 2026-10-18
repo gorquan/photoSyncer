@@ -175,6 +175,70 @@ class MediaPublisherTest {
         assertNoRetainedMedia()
     }
 
+    private fun photos(inputs: List<CrontabHistoryDetail>, transform: (CrontabHistoryDetail, Path) -> Unit = { _, _ -> }) =
+        MediaPublisher(directory.resolve("archive")).publish("1/${MediaIdentity.of(inputs.first().asset).groupKey}",
+            directory.resolve("out").toString(), "photos", inputs,
+            { asset, path -> Files.write(path, if (asset.type == AssetType.VIDEO) mov else jpeg); true }, transform)
+
+    private fun restore(inputs: List<CrontabHistoryDetail>, receipt: PublicationReceipt,
+                        download: (Asset, Path) -> Boolean = { _, _ -> fail("unchanged Photos bytes must not download") }): PublicationReceipt {
+        val ordinary = inputs.map { input -> CrontabHistoryDetail(input) {
+            crontabHistory = CrontabHistory(input.crontabHistory) {
+                crontab = Crontab(input.crontabHistory.crontab) {
+                    config = input.crontabHistory.crontab.config.copy(synologyPhotos = false, targetPath = directory.resolve("restored").toString())
+                }
+            }
+            filePath = directory.resolve("restored/${Path.of(input.filePath).fileName}").toString()
+        } }
+        return MediaPublisher(directory.resolve("archive")).publish("1/${MediaIdentity.of(inputs.first().asset).groupKey}/1",
+            directory.resolve("restored").toString(), "original", ordinary, download, { _, _ -> }, localReceipts = listOf(receipt))
+    }
+
+    @Test fun disablingPhotosReusesUnchangedOriginalsAndKeepsCloudLiveCompanion() {
+        val inputs = listOf(detail(), detail("resOriginalVidCompl"))
+        val old = photos(inputs)
+        val originals = restore(inputs, old)
+        assertEquals(old.outputs.map { it.originalSha256 }, originals.outputs.map { it.outputSha256 })
+        assertTrue(originals.outputs.any { it.resource.endsWith("/resOriginalVidCompl") })
+        val cleanup = MediaDeletion(directory.resolve("archive"))
+        assertEquals(setOf(MediaIdentity.of(inputs.first().asset).groupKey), cleanup.legacyLayouts(1, false).keys)
+        assertEquals("DELETED", cleanup.retirePhotosLayouts(1, MediaIdentity.of(inputs.first().asset).groupKey, listOf(originals)).status)
+        assertTrue(old.outputs.none { Files.exists(Path.of(it.path)) })
+        assertTrue(originals.outputs.all { Files.isRegularFile(Path.of(it.path)) })
+        assertTrue(cleanup.legacyLayouts(1, false).isEmpty())
+        assertNoRetainedMedia()
+    }
+
+    @Test fun disablingPhotosRedownloadsOnlyTransformedContentAndRestoresExactCloudBytes() {
+        val inputs = listOf(detail(), detail("resOriginalVidCompl"))
+        val old = photos(inputs, transform = { item, path -> if (item.asset.type == AssetType.IMAGE)
+            Files.write(path, jpeg.take(2).toByteArray() + byteArrayOf(0xff.toByte(), 0xef.toByte(), 0, 3, 7) + jpeg.drop(2)) })
+        val downloads = mutableListOf<AssetType>()
+        val originals = restore(inputs, old) { asset, path ->
+            downloads += asset.type
+            assertEquals(AssetType.IMAGE, asset.type)
+            Files.write(path, jpeg); true
+        }
+        assertEquals(listOf(AssetType.IMAGE), downloads)
+        assertArrayEquals(jpeg, Files.readAllBytes(Path.of(originals.outputs.first().path)))
+        assertArrayEquals(mov, Files.readAllBytes(Path.of(originals.outputs.last().path)))
+        assertTrue(originals.outputs.all { it.originalSha256 == it.outputSha256 })
+        assertEquals("DELETED", MediaDeletion(directory.resolve("archive")).retirePhotosLayouts(1,
+            MediaIdentity.of(inputs.first().asset).groupKey, listOf(originals)).status)
+        assertNoRetainedMedia()
+    }
+
+    @Test fun unavailableCloudOriginalWhileDisablingKeepsOnlyAvailablePhotosCopy() {
+        val inputs = listOf(detail(), detail("resOriginalVidCompl"))
+        val old = photos(inputs, transform = { item, path -> if (item.asset.type == AssetType.IMAGE)
+            Files.write(path, jpeg.take(2).toByteArray() + byteArrayOf(0xff.toByte(), 0xef.toByte(), 0, 3, 7) + jpeg.drop(2)) })
+        val before = old.outputs.map { Files.readAllBytes(Path.of(it.path)) }
+        assertThrows(IllegalArgumentException::class.java) { restore(inputs, old) { _, _ -> false } }
+        old.outputs.forEachIndexed { index, output -> assertArrayEquals(before[index], Files.readAllBytes(Path.of(output.path))) }
+        assertFalse(Files.exists(directory.resolve("restored")))
+        assertNoRetainedMedia()
+    }
+
     @Test fun completeGroupKeepsOnlyTargetsAndRedownloadsMissingOrCorruptOutput() {
         val pair = listOf(detail(), detail("resOriginalVidCompl"))
         var downloads = 0

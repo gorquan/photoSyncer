@@ -397,10 +397,12 @@ export default {
       downloadLivePhotos: '下载苹果 Live Photo 动态部分',
       downloadLivePhotosHint: '随照片下载配对视频，独立于普通视频开关；小米动态照片保留在原图中。',
       synologyPhotos: '适配群晖 Photos',
-      synologyPhotosLockedHint: '此计划已启用群晖 Photos 适配，不能关闭。',
       synologyPhotosEnableTitle: '开启群晖 Photos 适配',
       synologyPhotosEnableHint:
-        '开启并保存后不能关闭。下次同步优先使用已校验的本地原件生成群晖布局，仅在缺失、损坏或版本不符时补下载。新文件校验通过后再清理本计划对应的旧文件；失败时保留旧文件并重试。手动修改或被其他计划引用的文件会保留并提示。目标路径须为固定根目录，不支持路径模板。',
+        '保存后，下次同步优先使用已校验的本地原件生成群晖布局，仅在缺失、损坏或版本不符时补下载。新文件校验通过后再清理旧布局；失败时保留旧文件。目标路径须为固定根目录。',
+      synologyPhotosDisableTitle: '关闭群晖 Photos 适配',
+      synologyPhotosDisableHint:
+        '保存后，下次同步恢复普通目录中的云端原件，再清理本计划的群晖适配文件。内容未改动的原件直接复用；补过 EXIF 的文件需要从云端重新下载，不能仅删除标签还原。Live Photo 配套视频属于云端原件，会保留。云端不可用、文件被外部修改或被其他计划引用时，保留现有文件并提示。',
       synologyPhotosHint:
         '开启：使用固定目标根目录，按厂商、账号和图库隔离导出；Apple Live Photo 图片与视频同名配对，小米动态照片保留原始结构。',
       synologyPhotosOffHint:

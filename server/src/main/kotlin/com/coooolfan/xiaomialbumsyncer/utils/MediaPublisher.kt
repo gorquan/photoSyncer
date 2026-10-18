@@ -154,12 +154,11 @@ class MediaPublisher(private val root: Path) {
         detail: CrontabHistoryDetail, source: String, copy: Path, receipts: List<PublicationReceipt>,
     ): Triple<OriginalDigests, VerificationStatus, MotionPhotoInspection>? {
         val task = detail.crontabHistory.crontab
-        if (!task.config.synologyPhotos) return null
         val identity = MediaIdentity.of(detail.asset)
-        val prefix = "${task.id}/${identity.groupKey}/"
+        val base = "${task.id}/${identity.groupKey}"
         for (receipt in receipts) {
-            if (!receipt.complete || receipt.version != VERSION || !receipt.group.startsWith(prefix) ||
-                receipt.group.removePrefix(prefix).toLongOrNull() == null) continue
+            if (!receipt.complete || receipt.version != VERSION || receipt.group != base &&
+                (!receipt.group.startsWith("$base/") || receipt.group.removePrefix("$base/").toLongOrNull() == null)) continue
             for (output in receipt.outputs) {
                 if (output.resource != identity.resourceKey || output.source != source || output.size != detail.asset.size ||
                     !output.originalSha256.matches(Regex("[a-f0-9]{64}")) || output.originalSha256 != output.outputSha256) continue
