@@ -8,7 +8,7 @@ Cloud-to-local photo/video retention. Xiaomi FULL/TIMELINE and iCloud FULL/CURSO
 
 ## Contracts
 
-`PUT /api/crontab/{id}` compares loaded `syncMode` and `config.syncCloudDeletes` against persisted values inside an IMMEDIATE transaction before saving. Actual changes return HTTP400 with no partial update; omitted or identical fields are accepted. `config.synologyPhotos` may change false→true but never true→false. Missing legacy booleans default false. Other config fields and album selection remain editable. No migration of existing modes is implicit.
+`PUT /api/crontab/{id}` compares loaded `syncMode` and `config.syncCloudDeletes` against persisted values inside an IMMEDIATE transaction before saving. Actual changes return HTTP400 with no partial update; omitted or identical fields are accepted. `config.synologyPhotos` may change in either direction; historical layout migration happens during the next sync. Missing legacy booleans default false. Other config fields and album selection remain editable. No migration of existing modes is implicit.
 
 Private `mirror_inventory` stores task ID, per-album group keys and an exactly matched optional Xiaomi timeline. `mirror_members` is an indexed projection maintained by SQLite triggers in the same transaction, including rollback and deletion. Neither is exposed in API fetchers. Absence never mutates account-wide `Asset.cloudDeleted`; backups ignore legacy global flags. Publication SQL and under-lock checks use task+album membership. Missing inventory fails closed. Audio retains its existing backup path.
 
@@ -22,8 +22,8 @@ Cleanup retries committed absence, including old histories after selection chang
 | Input / condition | Required result |
 | --- | --- |
 | Xiaomi CURSOR mirror create/update | HTTP400; no changed settings |
-| Update scan/retention or disable saved Photos | HTTP400; entire update rejected |
-| Same modes, omitted mode fields, or enable Photos | Save other editable settings; scan/retention remain unchanged |
+| Update scan/retention | HTTP400; entire update rejected |
+| Same modes, omitted mode fields, or toggle Photos | Save other editable settings; scan/retention remain unchanged |
 | Successful empty full or timeline inventory | Remove owned absent groups |
 | Present in another selected album | Retain, publish current membership |
 | Present only outside selected scope | Remove this task's managed files |
@@ -39,7 +39,7 @@ Good: a photo removed from all selected albums is absent only for this mirror ta
 
 ## Tests Required
 
-Mode regressions cover Xiaomi FULL/TIMELINE/CURSOR backup and supported mirror combinations, iCloud updates, defaulted legacy booleans, identical/omitted mode fields, one-way Photos, editable scope/performance and rejected updates preserving all fields.
+Mode regressions cover Xiaomi FULL/TIMELINE/CURSOR backup and supported mirror combinations, iCloud updates, defaulted legacy booleans, identical/omitted mode fields, reversible Photos, editable scope/performance and rejected updates preserving all fields.
 
 Use real SQLite/Flyway, synthetic provider HTTP and temporary files for task/account/zone scope, migration, indexed projection, rollback, current memberships, full and timeline absence, empty dates, unchanged hashes, cursor deletion/restore and relation changes. Keep ownership/path/hash conflict and retry tests. Run JDK25 clean compileKotlin test apiE2eJvm and frontend yarn lint/format/build. Synthetic tests do not prove real Apple destructive event delivery; never mutate real cloud media without user authorization.
 

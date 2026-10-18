@@ -11,8 +11,8 @@ import java.nio.file.Path
 
 @Managed
 class MediaPublicationService(private val sql: KSqlClient, private val media: CloudMediaService) {
-    fun legacyLayouts(task: Crontab): Map<String, List<PublicationReceipt>> = if (task.config.synologyPhotos)
-        MediaDeletion(mediaStorageRoot()).legacyLayouts(task.id) else emptyMap()
+    fun legacyLayouts(task: Crontab): Map<String, List<PublicationReceipt>> =
+        MediaDeletion(mediaStorageRoot()).legacyLayouts(task.id, task.config.synologyPhotos)
 
     fun process(details: List<CrontabHistoryDetail>, systemConfig: SystemConfig, legacyReceipts: List<PublicationReceipt>? = null) =
         MediaFileLocks.group(MediaIdentity.of(details.first().asset).groupKey) {
@@ -47,13 +47,6 @@ class MediaPublicationService(private val sql: KSqlClient, private val media: Cl
         val task = details.first().crontabHistory.crontab
         val config = task.config
         val identity = MediaIdentity.of(details.first().asset)
-        val group = "${task.id}/${identity.groupKey}" + if (config.synologyPhotos) "" else "/${details.first().asset.album.id}"
-        // Existing Photos receipts keep their fingerprint; old non-Photos EXIF exports
-        // must be downloaded again once to restore the cloud-original bytes.
-        val processingVersion = if (!config.synologyPhotos && config.rewriteExifTime) "cloud-original" else MediaPublisher.VERSION
-        val fingerprint = jacksonObjectMapper().writeValueAsString(listOf(processingVersion, config,
-            systemConfig.exifToolPath, details.map { listOf(it.asset.remoteKey, it.asset.checksum, it.asset.size,
-                it.asset.dateTaken.toString(), it.asset.mimeType, it.asset.motionPhotoHint, it.filePath) }))
         val root = mediaStorageRoot()
         try {
             sql.executeUpdate(CrontabHistoryDetail::class) {
@@ -61,40 +54,52 @@ class MediaPublicationService(private val sql: KSqlClient, private val media: Cl
                 set(table.exportVersion, MediaPublisher.VERSION)
                 where(table.id valueIn details.map { it.id })
             }
-            MediaPublisher(root).publish(group, config.targetPath, fingerprint, details,
-                download = { asset, path -> media.download(task.accountId, asset, path) },
-                transform = { detail, path -> transformPublicationMedia(detail, path, systemConfig) },
-                evidence = { detail, output ->
-                    sql.executeUpdate(CrontabHistoryDetail::class) {
-                        set(table.downloadCompleted, true)
-                        set(table.sha1Verified, true)
-                        set(table.verificationStatus, output.verification)
-                        set(table.localSha256, output.originalSha256)
-                        set(table.verifiedSize, output.size)
-                        set(table.archivePath, output.archive.takeIf { it.isNotBlank() })
-                        set(table.outputSha256, output.outputSha256)
-                        set(table.exifFilled, true)
-                        set(table.fsTimeUpdated, true)
-                        set(table.message, if (output.motionStatus == MotionPhotoStatus.STATIC && !detail.asset.motionPhotoHint) null else output.diagnostic)
-                        where(table.id eq detail.id)
-                    }
-                },
-                beforeCommit = { requireCurrentPresence(details) },
-                validationFailure = { detail, _ ->
-                    sql.executeUpdate(CrontabHistoryDetail::class) {
-                        set(table.downloadCompleted, false)
-                        set(table.sha1Verified, false)
-                        set(table.verificationStatus, VerificationStatus.FAILED)
-                        set(table.localSha256, null)
-                        set(table.verifiedSize, null)
-                        where(table.id eq detail.id)
-                    }
-                },
-                localReceipts = if (config.synologyPhotos) legacyReceipts.orEmpty() else emptyList())
-            if (legacyReceipts != null && config.synologyPhotos) {
-                val migrated = MediaDeletion(root).retireAlbumLayouts(task.id, identity.groupKey)
+            val albumGroups = if (config.synologyPhotos) listOf(details) else details.groupBy { it.asset.album.id }.values.toList()
+            val published = albumGroups.map { members ->
+                val group = "${task.id}/${identity.groupKey}" + if (config.synologyPhotos) "" else "/${members.first().asset.album.id}"
+                // Existing Photos receipts keep their fingerprint; old non-Photos EXIF exports
+                // must be downloaded again once to restore the cloud-original bytes.
+                val processingVersion = if (!config.synologyPhotos && config.rewriteExifTime) "cloud-original" else MediaPublisher.VERSION
+                val fingerprint = jacksonObjectMapper().writeValueAsString(listOf(processingVersion, config,
+                    systemConfig.exifToolPath, members.map { listOf(it.asset.remoteKey, it.asset.checksum, it.asset.size,
+                        it.asset.dateTaken.toString(), it.asset.mimeType, it.asset.motionPhotoHint, it.filePath) }))
+                MediaPublisher(root).publish(group, config.targetPath, fingerprint, members,
+                    download = { asset, path -> media.download(task.accountId, asset, path) },
+                    transform = { detail, path -> transformPublicationMedia(detail, path, systemConfig) },
+                    evidence = { detail, output ->
+                        sql.executeUpdate(CrontabHistoryDetail::class) {
+                            set(table.downloadCompleted, true)
+                            set(table.sha1Verified, true)
+                            set(table.verificationStatus, output.verification)
+                            set(table.localSha256, output.originalSha256)
+                            set(table.verifiedSize, output.size)
+                            set(table.archivePath, output.archive.takeIf { it.isNotBlank() })
+                            set(table.outputSha256, output.outputSha256)
+                            set(table.exifFilled, true)
+                            set(table.fsTimeUpdated, true)
+                            set(table.message, if (output.motionStatus == MotionPhotoStatus.STATIC && !detail.asset.motionPhotoHint) null else output.diagnostic)
+                            where(table.id eq detail.id)
+                        }
+                    },
+                    beforeCommit = { requireCurrentPresence(details) },
+                    validationFailure = { detail, _ ->
+                        sql.executeUpdate(CrontabHistoryDetail::class) {
+                            set(table.downloadCompleted, false)
+                            set(table.sha1Verified, false)
+                            set(table.verificationStatus, VerificationStatus.FAILED)
+                            set(table.localSha256, null)
+                            set(table.verifiedSize, null)
+                            where(table.id eq detail.id)
+                        }
+                    },
+                    localReceipts = legacyReceipts.orEmpty())
+            }
+            if (legacyReceipts != null) {
+                val cleanup = MediaDeletion(root)
+                val migrated = if (config.synologyPhotos) cleanup.retireAlbumLayouts(task.id, identity.groupKey, published)
+                    else cleanup.retirePhotosLayouts(task.id, identity.groupKey, published)
                 require(migrated.status == "DELETED") {
-                    "群晖布局迁移未完成，保留未清理文件，下次同步重试：${migrated.conflicts.joinToString("；")}" +
+                    "照片布局迁移未完成，保留未清理文件，下次同步重试：${migrated.conflicts.joinToString("；")}" +
                         if (migrated.deferredFiles > 0) "（其他计划仍引用 ${migrated.deferredFiles} 个文件）" else ""
                 }
             }

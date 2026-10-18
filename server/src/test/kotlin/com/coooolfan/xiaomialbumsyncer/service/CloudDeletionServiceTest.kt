@@ -169,7 +169,6 @@ class CloudDeletionServiceTest {
         for (patch in listOf(
             Crontab { id = job.id; syncMode = CrontabSyncMode.CURSOR; name = "must not save" },
             Crontab { id = job.id; config = job.config.copy(syncCloudDeletes = false); name = "must not save" },
-            Crontab { id = job.id; config = job.config.copy(synologyPhotos = false); name = "must not save" },
         )) {
             assertThrows(com.coooolfan.xiaomialbumsyncer.exception.BadRequestException::class.java) {
                 service.updateCrontab(patch, fetcher)

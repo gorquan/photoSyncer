@@ -404,11 +404,12 @@ const messages: typeof zh = {
       downloadLivePhotosHint:
         'Include the paired video with photos, independently of ordinary videos. Xiaomi motion stays inside the original image.',
       synologyPhotos: 'Synology Photos compatibility',
-      synologyPhotosLockedHint:
-        'Synology Photos compatibility is enabled for this plan and cannot be turned off.',
       synologyPhotosEnableTitle: 'Enable Synology Photos compatibility',
       synologyPhotosEnableHint:
-        'Once enabled and saved, this cannot be turned off. The next sync adapts verified local originals, downloading only missing, corrupt or changed versions. It validates the new Photos files before removing this plan’s corresponding old files. Failures keep old files for retry. Modified or shared files are retained and reported. Use a fixed target root; path templates are not supported.',
+        'After saving, the next sync adapts verified local originals, downloading only missing, corrupt or changed versions. It validates the new Photos files before removing obsolete layouts. Failures retain old files. Use a fixed target root.',
+      synologyPhotosDisableTitle: 'Disable Synology Photos compatibility',
+      synologyPhotosDisableHint:
+        'After saving, the next sync restores cloud originals in the ordinary layout before removing this plan’s Photos exports. Unchanged originals are reused locally; files changed by EXIF filling need a cloud download for exact restoration. Live Photo companion videos are cloud originals and remain. Unavailable cloud originals, externally modified files and files referenced by other plans are preserved and reported.',
       synologyPhotosHint:
         'On: use a fixed export root with provider, account and library folders. Apple Live Photo components share a basename; Xiaomi motion photos retain their original structure.',
       synologyPhotosOffHint:

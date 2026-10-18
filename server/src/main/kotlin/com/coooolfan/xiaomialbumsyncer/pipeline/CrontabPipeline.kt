@@ -130,14 +130,16 @@ class CrontabPipeline(
                     assets.map { asset ->
                         async(Dispatchers.IO) {
                             semaphore.withPermit {
-                                val group = assetService.publicationGroup(crontab, asset)
+                                val groupKey = com.coooolfan.xiaomialbumsyncer.utils.MediaIdentity.of(asset).groupKey
+                                val group = assetService.publicationGroup(crontab, asset,
+                                    acrossAlbums = !crontab.config.synologyPhotos && groupKey in legacyLayouts)
                                 if (asset.id != group.minOf { it.id }) return@withPermit 0 to 0
                                 val details = crontabService.insertCrontabHistoryDetails(group.map {
                                     CrontabHistoryDetail.init(crontabHistory, it)
                                 })
                                 try {
                                     publication.process(details, systemConfig,
-                                        legacyLayouts[com.coooolfan.xiaomialbumsyncer.utils.MediaIdentity.of(asset).groupKey])
+                                        legacyLayouts[groupKey])
                                     details.size to details.size
                                 } catch (failure: Exception) {
                                     currentCoroutineContext().ensureActive()
