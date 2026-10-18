@@ -25,6 +25,9 @@ class DataSource {
             buildSQLiteUrl(dbPath, sqliteUrlProperties.toOptions())
         }
         config.driverClassName = "org.sqlite.JDBC"
+        // Reserve the writer before a transaction reads. A stale WAL snapshot cannot
+        // upgrade from DEFERRED to a writer, even when busy_timeout is configured.
+        config.addDataSourceProperty("transaction_mode", "IMMEDIATE")
         config.maximumPoolSize = validateSQLiteMaximumPoolSize(sqliteUrlProperties.maximumPoolSize)
         config.connectionTestQuery = "SELECT 1"
         config.poolName = "SQLitePool"

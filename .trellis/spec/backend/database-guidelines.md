@@ -9,6 +9,8 @@ Entities live under `server/src/main/kotlin/com/coooolfan/xiaomialbumsyncer/mode
 ## Contracts
 Use forward versioned SQL migrations; never edit previously released migrations. Keep entity defaults and SQL defaults consistent. Existing history completion flags must not acquire stronger verification semantics during migration. Fetch association/scalar fields explicitly before accessing them; an unloaded property is different from null. Timeline baseline reuse requires both an ended history and fetchedAllAssets=true; a failed partial enumeration cannot advance its baseline. A fully fetched history with later publication failures is still a valid metadata baseline. Initial timeline snapshots are captured before enumeration and persisted only after enumeration succeeds; uploads during pagination must remain detectable on the next run. Serialized CrontabConfig additions need defaults for old JSON and corresponding TypeScript/form defaults.
 
+The shared SQLite connection pool defaults JDBC `transaction_mode` to `IMMEDIATE`. Read-then-write transactions must reserve the writer before reading; WAL `SQLITE_BUSY_SNAPSHOT` cannot be fixed by increasing `busy_timeout`. Keep provider requests and file processing outside database transactions. Autocommit WAL readers remain concurrent; write transactions wait within the configured busy timeout. Complete `SQLITE_URL` settings remain authoritative, including an explicitly supplied transaction mode.
+
 Running-history `plannedAssetCount` is nullable for legacy or unplanned runs. After metadata enumeration and deletion reconciliation, count eligible resources using the same filters as publication paging and atomically store the snapshot with `fetchedAllAssets=true`, before inserting the first processing batch. Stats `assetCount` uses this fixed snapshot, never the growing detail-row count. `publishedCount` counts only final `PUBLISHED` rows; stage flags are separate evidence.
 
 ## Validation & Error Matrix
@@ -19,6 +21,8 @@ Good: migration retains existing rows and records conservative evidence. Base: c
 
 ## Tests Required
 Run real SQLite Flyway/Jimmer regressions, including upgrades with populated old rows and default config deserialization. Build with JDK25 `./gradlew clean compileKotlin test` in server.
+
+Connection policy changes require real WAL/pool regressions: reproduce a stale DEFERRED snapshot, verify both generated and configured URLs wait before reading in write transactions while autocommit readers proceed, preserve concurrent Jimmer updates, and verify rollback plus connection reuse.
 
 ## Wrong vs Correct
 Wrong: change an old migration or require a new serialized field with no default. Correct: add a forward migration and backward-compatible Kotlin/TypeScript defaults. Wrong: assume a path exists because a history boolean is true. Correct: verify publication receipt/version and actual local output.
