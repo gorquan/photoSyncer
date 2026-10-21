@@ -12,28 +12,24 @@ export interface LocalCronForm extends Writable<Omit<CrontabCreateInput, 'albumI
   albumIds: number[]
 }
 
-const DEFAULT_PATH_SUFFIX = '/${album}/${downloadFileName}'
-
 function trimTrailingSlash(path: string): string {
   return path.replace(/\/+$/, '')
 }
 
-function normalizeTargetPath(path: string): string {
-  const trimmed = trimTrailingSlash(path.trim())
-  return trimmed.includes('${') ? trimmed : `${trimmed}${DEFAULT_PATH_SUFFIX}`
-}
-
-// 路径表达式中首个插值前的字面目录，用于挂载检测
-export function targetBasePath(path: string): string {
+/** The configured path is always a literal export root. */
+export function targetRootPath(path: string): string {
   const trimmed = path.trim()
   if (!trimmed) return ''
-  return trimTrailingSlash(trimmed.split('$', 1)[0] ?? '') || '/'
+  const expressionStart = trimmed.indexOf('${')
+  return trimTrailingSlash(expressionStart >= 0 ? trimmed.slice(0, expressionStart) : trimmed) || '/'
+}
+
+export function targetBasePath(path: string): string {
+  return targetRootPath(path)
 }
 
 export function displayTargetPath(path: string): string {
-  return path.endsWith(DEFAULT_PATH_SUFFIX)
-    ? path.slice(0, -DEFAULT_PATH_SUFFIX.length) || '/'
-    : path
+  return targetRootPath(path)
 }
 
 export function buildSubmitConfig(form: LocalCronForm): CrontabConfig {
@@ -41,9 +37,7 @@ export function buildSubmitConfig(form: LocalCronForm): CrontabConfig {
     ...form.config,
     // 禁用任务不校验表达式，提交时兜底默认值避免空串
     expression: form.config.expression.trim() || '0 0 23 * * ?',
-    targetPath: form.config.synologyPhotos
-      ? form.config.targetPath.trim()
-      : normalizeTargetPath(form.config.targetPath),
+    targetPath: targetRootPath(form.config.targetPath),
   }
 }
 
@@ -51,7 +45,7 @@ export function createDefaultCronConfig(defaultTz: string): CrontabConfig {
   return {
     expression: '0 0 23 * * ?',
     timeZone: defaultTz,
-    targetPath: '/app/download',
+    targetPath: '/photos',
     downloadImages: true,
     downloadVideos: true,
     downloadLivePhotos: true,

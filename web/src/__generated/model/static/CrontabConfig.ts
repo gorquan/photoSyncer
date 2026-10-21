@@ -17,7 +17,7 @@ export interface CrontabConfig {
     readonly notify: boolean;
     readonly downloadLivePhotos: boolean;
     /**
-     * Use targetPath as a literal root, with account/zone isolated, album-independent files.
+     * Use targetPath as the shared export root. Every layout remains isolated by provider/account/library.
      */
     readonly synologyPhotos: boolean;
     /**

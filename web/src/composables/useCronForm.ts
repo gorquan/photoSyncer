@@ -133,8 +133,6 @@ export function useCronForm(getDefaultAccountId: () => number) {
     const pathValue = cronForm.value.config.targetPath
     if (!pathValue || pathValue.trim() === '')
       errors.targetPath = i18n.global.t('cronform.errors.required')
-    if (cronForm.value.config.synologyPhotos && pathValue.includes('${'))
-      errors.targetPath = i18n.global.t('cronform.errors.synologyRoot')
     if (!cronForm.value.accountId)
       errors.accountId = i18n.global.t('cronform.errors.requiredSelect')
 

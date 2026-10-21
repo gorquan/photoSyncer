@@ -59,7 +59,7 @@ interface CrontabHistoryDetail {
     companion object {
         private val TOKEN_REGEX = Regex("""\$\{([^}]+)}""")
 
-        // 目录未包含插值时补全的默认相册/文件名模板
+        // 保留旧导入实体（缺少账号关系）读取历史路径的兼容常量。
         const val DEFAULT_FILE_TEMPLATE = "\${album}/\${downloadFileName}"
 
         fun init(
@@ -84,34 +84,48 @@ interface CrontabHistoryDetail {
 
     /**
      * 生成下载目标路径。
-     * targetPath 始终是完整路径表达式，支持 ${} 插值（含时间格式化前缀）。
-     * 不含插值的目录自动补全默认相册/文件名模板。
+     *
+     * targetPath 是系统级导出根目录，例如 /photos。无论是否开启群晖
+     * Photos 适配，都必须先按厂商、账号（以及 iCloud 图库）隔离，不能
+     * 通过路径模板绕过账号目录。旧版本保存过的路径表达式只取插值前的
+     * 字面目录作为根目录，便于平滑迁移。
      */
     fun genFilePath(history: CrontabHistory, asset: Asset): String {
         val config = history.crontab.config
         val configuredPath = config.targetPath.trim()
+        val root = configuredPath.substringBefore("${'$'}{").trimEnd('/')
+        require(root.isNotEmpty()) { "目标根目录不能为空" }
+
+        val identity = runCatching { com.coooolfan.xiaomialbumsyncer.utils.MediaIdentity.of(asset) }.getOrNull()
+        // 旧导入数据可能没有加载相册账号关系，只能沿用其历史路径；新任务和正常同步
+        // 都会加载账号关系，因此始终走统一根目录和账号隔离布局。
+        if (identity == null) return legacyFilePath(history, asset)
+        val accountRoot = Path(root, identity.directory)
         if (config.synologyPhotos) {
-            require(!configuredPath.contains("${'$'}{")) { "群晖 Photos 模式需要固定的目标根目录，不支持路径插值" }
-            require(configuredPath.isNotEmpty()) { "目标根目录不能为空" }
-            val identity = com.coooolfan.xiaomialbumsyncer.utils.MediaIdentity.of(asset)
-            return Path(configuredPath, identity.directory, identity.fileName(asset)).normalize().toString()
+            return accountRoot.resolve(identity.fileName(asset)).normalize().toString()
         }
+
+        // 普通模式仍然使用同一个根目录和账号隔离，只恢复相册层级与云端文件名。
+        // iCloud 使用稳定文件名，以保证 Live Photo 的图片和配套视频可以配对。
+        val fileName = if (identity.provider == CloudProvider.ICLOUD) {
+            identity.fileName(asset)
+        } else {
+            sanitizeSegment(asset.fileName)
+        }
+        return accountRoot.resolve(sanitizeSegment(asset.album.name)).resolve(fileName).normalize().toString()
+    }
+
+    private fun legacyFilePath(history: CrontabHistory, asset: Asset): String {
+        val config = history.crontab.config
+        val configuredPath = config.targetPath.trim()
         val expression = if (TOKEN_REGEX.containsMatchIn(configuredPath)) configuredPath
         else Path(configuredPath, DEFAULT_FILE_TEMPLATE).toString()
-
         val zoneId = resolveZoneId(config.timeZone)
         val downloadTime = history.startTime
         val takenTime = asset.dateTaken
-
-        val fileNameRaw = if (org.babyfish.jimmer.ImmutableObjects.isLoaded(asset.album, "account") &&
-            asset.album.account.provider == CloudProvider.ICLOUD) {
-            com.coooolfan.xiaomialbumsyncer.utils.MediaIdentity.of(asset).fileName(asset)
-        } else asset.fileName
-        val fileName = fileNameRaw
-        val fileNameSafe = sanitizeSegment(fileName)
+        val fileNameSafe = sanitizeSegment(asset.fileName)
         val fileStem = fileNameSafe.substringBeforeLast('.', fileNameSafe)
-        val fileExt = fileNameRaw.substringAfterLast('.', "")
-
+        val fileExt = asset.fileName.substringAfterLast('.', "")
         val replacements = buildMap {
             put("crontabId", history.crontab.id.toString())
             put("crontabName", history.crontab.name)
@@ -119,16 +133,11 @@ interface CrontabHistoryDetail {
             put("album", sanitizeSegment(asset.album.name))
             put("albumName", sanitizeSegment(asset.album.name))
             put("fileName", fileNameSafe)
-            put(
-                "downloadFileName",
-                if (asset.type == AssetType.AUDIO) "${asset.id}_$fileNameSafe" else fileNameSafe
-            )
+            put("downloadFileName", if (asset.type == AssetType.AUDIO) "${asset.id}_$fileNameSafe" else fileNameSafe)
             put("fileStem", fileStem)
             put("fileExt", fileExt)
             put("assetId", asset.id.toString())
             put("assetType", asset.type.name.lowercase(Locale.ROOT))
-            put("recordingTypeId", asset.recordingType?.code?.toString() ?: "")
-            put("recordingType", asset.recordingType?.label ?: "")
             put("checksum", asset.checksum)
             put("sha1", asset.checksum)
             put("title", sanitizeSegment(asset.title))
@@ -138,39 +147,20 @@ interface CrontabHistoryDetail {
             put("downloadEpochSeconds", downloadTime.epochSecond.toString())
             put("takenEpochSeconds", takenTime.epochSecond.toString())
         }
-
-        val resolved = interpolateExpression(expression, replacements, downloadTime, takenTime, zoneId).trim()
-        require(resolved.isNotEmpty()) { "targetPath 解析结果不能为空" }
-        return Path(resolved).normalize().toString()
+        return Path(interpolateExpression(expression, replacements, downloadTime, takenTime, zoneId).trim()).normalize().toString()
     }
 
-    // 将模板中的 ${key} 替换为对应值，并解析 download_/taken_ 时间格式。
     private fun interpolateExpression(
-        template: String,
-        values: Map<String, String>,
-        downloadTime: Instant,
-        takenTime: Instant,
-        zoneId: ZoneId,
-    ): String {
-        return TOKEN_REGEX.replace(template) { match ->
-            val key = match.groupValues[1]
-            when {
-                key.startsWith("download_") -> {
-                    val pattern = key.removePrefix("download_")
-                    formatInstant(downloadTime, zoneId, pattern) ?: match.value
-                }
-
-                key.startsWith("taken_") -> {
-                    val pattern = key.removePrefix("taken_")
-                    formatInstant(takenTime, zoneId, pattern) ?: match.value
-                }
-
-                else -> values[key] ?: match.value
-            }
+        template: String, values: Map<String, String>, downloadTime: Instant, takenTime: Instant, zoneId: ZoneId,
+    ): String = TOKEN_REGEX.replace(template) { match ->
+        val key = match.groupValues[1]
+        when {
+            key.startsWith("download_") -> formatInstant(downloadTime, zoneId, key.removePrefix("download_")) ?: match.value
+            key.startsWith("taken_") -> formatInstant(takenTime, zoneId, key.removePrefix("taken_")) ?: match.value
+            else -> values[key] ?: match.value
         }
     }
 
-    // 使用 DateTimeFormatter 处理时间格式
     private fun formatInstant(instant: Instant, zoneId: ZoneId, pattern: String): String? {
         if (pattern.isBlank()) return null
         return runCatching {
@@ -178,13 +168,9 @@ interface CrontabHistoryDetail {
         }.getOrNull()
     }
 
-    // 解析时区；解析失败时回退系统默认时区。
-    private fun resolveZoneId(timeZone: String?): ZoneId {
-        if (timeZone.isNullOrBlank()) {
-            return ZoneId.systemDefault()
-        }
-        return runCatching { ZoneId.of(timeZone) }.getOrDefault(ZoneId.systemDefault())
-    }
+    private fun resolveZoneId(timeZone: String?): ZoneId = if (timeZone.isNullOrBlank()) {
+        ZoneId.systemDefault()
+    } else runCatching { ZoneId.of(timeZone) }.getOrDefault(ZoneId.systemDefault())
 
     // 用于生成安全路径片段，避免非法字符。
     private fun sanitizeSegment(value: String): String {

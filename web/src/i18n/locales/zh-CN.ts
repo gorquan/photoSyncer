@@ -364,14 +364,11 @@ export default {
       timeZone: '时区',
       targetPath: '保存路径',
       targetPathPhotosHint:
-        '填写已挂载的固定根目录，例如 /photos。应用在其下按厂商、账号和图库保存文件，不使用路径模板。',
+        '填写已挂载的统一根目录，例如 /photos。无论是否开启群晖 Photos，文件都会在其下按厂商和账号隔离保存；群晖开关只改变账号目录内的布局。',
       targetPathHint:
-        '如在容器环境下运行，请确保已将此路径映射到宿主机。程序将在此路径下创建相册各自的文件夹。',
+        '如在容器环境下运行，请确保已将此路径映射到宿主机。程序会在此根目录下按厂商、账号和相册创建目录。',
       targetPathMountWarning:
         '警告：该路径可能仅存在于容器内，未挂载到宿主机，数据可能不会被持久化。',
-      useExpressionPath: '路径模板',
-      targetPathExpressionHint:
-        '使用完整的保存路径模板，支持变量占位符。相对路径将从根目录开始解析，建议以 / 开头。',
       albums: '关联相册',
       albumsPlaceholder: '选择相册',
     },
@@ -405,7 +402,7 @@ export default {
       synologyPhotosHint:
         '开启：使用固定目标根目录，按厂商、账号和图库隔离导出；Apple Live Photo 图片与视频同名配对，小米动态照片保留原始结构。',
       synologyPhotosOffHint:
-        '未开启：保留云端原件内容，不填充 EXIF，使用普通相册路径或路径模板。HEIC / HEVC 预览取决于 NAS 和客户端能力。',
+        '未开启：保留云端原件内容，不填充 EXIF；文件仍在同一个根目录和账号目录下，只使用普通相册布局。HEIC / HEVC 预览取决于 NAS 和客户端能力。',
       notify: '发送通知',
       enabled: '定时触发',
     },
@@ -456,7 +453,7 @@ export default {
       exifProcessorsHint: 'EXIF 信息填充并发数',
     },
     errors: {
-      synologyRoot: '群晖 Photos 模式需要固定根目录，请移除路径插值。',
+      synologyRoot: '请输入统一的保存根目录。',
       required: '必填',
       requiredSelect: '必选',
       invalidExpression: '看起来这不是一个有效的表达式',

@@ -368,14 +368,11 @@ const messages: typeof zh = {
       timeZone: 'Time zone',
       targetPath: 'Save path',
       targetPathPhotosHint:
-        'Enter a mounted fixed root, such as /photos. Files are grouped below it by provider, account and library. Path templates are not used.',
+        'Enter one mounted export root, such as /photos. Files are always isolated below it by provider and account; the Photos switch only changes the layout inside that account folder.',
       targetPathHint:
-        'When running in a container, make sure this path is mapped to the host. A folder is created under it for each album.',
+        'When running in a container, make sure this path is mapped to the host. Provider, account and album folders are created below this root.',
       targetPathMountWarning:
         'Warning: this path may only exist inside the container and is not mounted to the host, so data may not be persisted.',
-      useExpressionPath: 'Path template',
-      targetPathExpressionHint:
-        'Use a full save path template with variable placeholders. It is recommended to start with / for an absolute path.',
       albums: 'Linked albums',
       albumsPlaceholder: 'Select albums',
     },
@@ -412,7 +409,7 @@ const messages: typeof zh = {
       synologyPhotosHint:
         'On: use a fixed export root with provider, account and library folders. Apple Live Photo components share a basename; Xiaomi motion photos retain their original structure.',
       synologyPhotosOffHint:
-        'When disabled: preserve cloud-original bytes without EXIF filling; use regular album paths or a path template. HEIC / HEVC previews depend on the NAS and client.',
+        'When disabled: preserve cloud-original bytes without EXIF filling; files stay under the same root and account folder using the regular album layout. HEIC / HEVC previews depend on the NAS and client.',
       notify: 'Send notifications',
       enabled: 'Scheduled trigger',
     },
@@ -466,7 +463,7 @@ const messages: typeof zh = {
       exifProcessorsHint: 'EXIF fill workers',
     },
     errors: {
-      synologyRoot: 'Synology Photos mode requires a fixed root without path expressions.',
+      synologyRoot: 'Enter one unified export root.',
       required: 'Required',
       requiredSelect: 'Please select an option',
       invalidExpression: "This doesn't look like a valid expression",
