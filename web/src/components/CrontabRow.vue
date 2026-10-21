@@ -248,7 +248,6 @@ const enabledOptionTags = computed(() => {
   const tags: string[] = []
   if (c.downloadImages) tags.push(t('schedule.options.images'))
   if (c.downloadVideos) tags.push(t('schedule.options.videos'))
-  if (c.downloadAudios) tags.push(t('schedule.options.audios'))
   if (c.notify) tags.push(t('schedule.options.notify'))
   if (c.rewriteExifTime) tags.push(t('schedule.options.exif'))
   if (props.crontab.syncMode === 'CURSOR') tags.push(t('cronform.advanced.syncModeCursor'))

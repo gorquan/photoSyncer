@@ -161,7 +161,6 @@ const messages: typeof zh = {
     options: {
       images: 'Photos',
       videos: 'Videos',
-      audios: 'Audio',
       notify: 'Notifications',
       exif: 'Fill EXIF',
       skipExisting: 'Skip existing',
@@ -414,7 +413,6 @@ const messages: typeof zh = {
         'On: use a fixed export root with provider, account and library folders. Apple Live Photo components share a basename; Xiaomi motion photos retain their original structure.',
       synologyPhotosOffHint:
         'When disabled: preserve cloud-original bytes without EXIF filling; use regular album paths or a path template. HEIC / HEVC previews depend on the NAS and client.',
-      downloadAudios: 'Download recordings',
       notify: 'Send notifications',
       enabled: 'Scheduled trigger',
     },
@@ -532,8 +530,6 @@ const messages: typeof zh = {
         fileStem: 'File name (no extension)',
         fileExt: 'Extension',
         assetType: 'Asset type',
-        recordingTypeId: 'Recording category ID',
-        recordingType: 'Recording category',
         title: 'Asset title',
         assetId: 'Asset ID',
         size: 'File size',
@@ -551,15 +547,12 @@ const messages: typeof zh = {
       tipsTitle: 'Tips',
       tipsIntro:
         'Make sure the generated path is unique for every asset, otherwise earlier files will be overwritten. Note the following:',
-      tipRecording:
-        'Recording files often share the same name — include {token} to avoid filename collisions',
       tipOverwrite: 'The app cannot and does not check for overwrites caused by {misconfig}',
       misconfig: 'misconfiguration',
       examplesTitle: 'Examples',
       examples: {
         albumMonth: 'Archive by album and month',
         typeDate: 'Archive by type and capture date',
-        audioKeepName: 'Keep original names for audio files (relative path)',
       },
     },
   },
@@ -850,7 +843,7 @@ const messages: typeof zh = {
       confirmDeleteAccept: 'Delete',
       provider: 'Provider',
       providerXiaomi: 'Xiaomi Cloud',
-      providerXiaomiDesc: 'Sync Xiaomi Cloud albums and recordings',
+      providerXiaomiDesc: 'Sync Xiaomi Cloud albums',
       providerIcloud: 'Apple iCloud',
       providerIcloudDesc: 'Sync iCloud Photos — Advanced Data Protection must be off',
       methodQrTitle: 'Scan QR code',

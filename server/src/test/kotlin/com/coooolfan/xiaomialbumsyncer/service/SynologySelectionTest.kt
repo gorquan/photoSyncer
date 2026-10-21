@@ -119,13 +119,11 @@ class SynologySelectionTest {
         assertEquals(2, service.publicationGroup(native, overlapping, acrossAlbums = true).size)
         assertNotEquals(MediaIdentity.of(selected[0]).stem, MediaIdentity.of(selected[1]).stem)
         media.saveAssets(listOf(Asset(native(albums[0], "remote-audio")) { type = AssetType.AUDIO }))
-        assertEquals(3L, service.countAssetsForPublication(job(albums)))
-        val noAudio = Crontab(job(albums)) { config = job(albums).config.copy(downloadAudios = false) }
-        assertEquals(2L, service.countAssetsForPublication(noAudio))
+        assertEquals(2L, service.countAssetsForPublication(job(albums)))
         sql.executeUpdate(Asset::class) {
             where(table.remoteKey eq "remote-1"); set(table.cloudDeleted, true)
         }
-        assertEquals(2L, service.countAssetsForPublication(noAudio), "legacy global deletion must not suppress a backup")
+        assertEquals(2L, service.countAssetsForPublication(job(albums)), "legacy global deletion must not suppress a backup")
     }
 
     @Test fun authoritativeAppleObservationRetiresMissingRolesAcrossMemberships() = withStore { _, media, service, albums ->

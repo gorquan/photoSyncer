@@ -191,7 +191,6 @@ class ApiMemoryBenchmarkSuite {
                 "targetPath" to workDir.resolve("downloads").toString(),
                 "downloadImages" to true,
                 "downloadVideos" to true,
-                "downloadAudios" to false,
                 "rewriteExifTime" to rewriteExifTime,
                 "rewriteExifTimeZone" to "UTC",
                 "skipExistingFile" to true,

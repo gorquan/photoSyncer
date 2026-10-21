@@ -3,7 +3,6 @@ package com.coooolfan.xiaomialbumsyncer.service
 import com.coooolfan.xiaomialbumsyncer.model.*
 import com.coooolfan.xiaomialbumsyncer.icloud.ICloudAlbumKey
 import com.coooolfan.xiaomialbumsyncer.icloud.ICloudPhotos
-import com.coooolfan.xiaomialbumsyncer.utils.isAudioAlbum
 import com.coooolfan.xiaomialbumsyncer.utils.MediaIdentity
 import com.coooolfan.xiaomialbumsyncer.xiaomicloud.AlbumSyncInfo
 import com.coooolfan.xiaomialbumsyncer.xiaomicloud.XiaoMiApi
@@ -146,9 +145,7 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
     ) {
         val accountId = crontab.accountId
 
-        // 录音不在相册位点体系内，维持全量路径
-        val (audioAlbums, galleryAlbums) = crontabAlbums(crontab).partition { it.isAudioAlbum() }
-        audioAlbums.forEach(::refreshAlbumFull)
+        val galleryAlbums = crontabAlbums(crontab)
         if (galleryAlbums.isEmpty()) return
 
         // 预检：一次请求取全部相册水位头
@@ -186,20 +183,17 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
         val albums = sql.executeQuery(Album::class) {
             where(table.id valueIn crontab.albumIds)
             where(table.accountId eq crontab.accountId)
+            where(table.remoteKey ne "-1")
             select(table.fetchBy { allScalarFields(); account { provider() } })
         }
-        require(albums.size == crontab.albumIds.distinct().size) { "镜像相册范围不完整，本次保留文件" }
-        val gallery = albums.filterNot { it.isAudioAlbum() }
+        require(albums.isNotEmpty()) { "镜像相册范围不完整，本次保留文件" }
         val timeline = if (crontab.syncMode == CrontabSyncMode.TIMELINE)
-            fetchAlbumsTimelineSnapshot(crontab.accountId, gallery) else null
+            fetchAlbumsTimelineSnapshot(crontab.accountId, albums) else null
         val previous = deletion.inventory(crontab)
         val observed = java.util.concurrent.ConcurrentHashMap<Long, Set<String>>()
         runBlocking(Dispatchers.IO) {
             val semaphore = Semaphore(5)
             albums.map { album -> async { semaphore.withPermit {
-                if (album.isAudioAlbum()) {
-                    refreshAlbumFull(album)
-                } else {
                     val remote = album.remoteKey.toLongOrNull()
                     val latest = timeline?.get(remote)
                     val before = previous?.timeline?.get(remote)
@@ -227,7 +221,6 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
                         }
                         observed[album.id] = groups.toSet()
                     }
-                }
             } } }.awaitAll()
         }
         return sql.transaction {
@@ -395,6 +388,7 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
 
     private fun crontabAlbums(crontab: Crontab): List<Album> = sql.executeQuery(Album::class) {
         where(table.id valueIn crontab.albumIds)
+        where(table.remoteKey ne "-1")
         select(table)
     }
 
@@ -467,12 +461,13 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
             else where(table.type ne AssetType.VIDEO)
         }
         if (!crontab.config.downloadLivePhotos || !crontab.config.downloadImages) where(companion.not())
-        if (!crontab.config.downloadAudios) where(table.type ne AssetType.AUDIO)
+        // Recording synchronization was removed; audio assets are never part of a task.
+        where(table.type ne AssetType.AUDIO)
     }
 
     /** Photos deduplicates roles; reverse migration keeps every selected ordinary album membership. */
     fun publicationGroup(crontab: Crontab, asset: Asset, acrossAlbums: Boolean = false): List<Asset> {
-        if (asset.type != AssetType.AUDIO && crontab.config.syncCloudDeletes && !mirrorContains(sql, crontab.id, asset.album.id, MediaIdentity.of(asset).groupKey)) return emptyList()
+        if (crontab.config.syncCloudDeletes && !mirrorContains(sql, crontab.id, asset.album.id, MediaIdentity.of(asset).groupKey)) return emptyList()
         val identity = com.coooolfan.xiaomialbumsyncer.utils.MediaIdentity.of(asset)
         if (identity.provider != CloudProvider.ICLOUD && !acrossAlbums) return listOf(asset)
         val keys = if (identity.provider == CloudProvider.ICLOUD)
@@ -501,20 +496,20 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
                 AssetType.IMAGE -> crontab.config.downloadImages
                 AssetType.VIDEO -> if (com.coooolfan.xiaomialbumsyncer.utils.MediaIdentity.of(it).liveCompanion)
                     crontab.config.downloadImages && crontab.config.downloadLivePhotos else crontab.config.downloadVideos
-                AssetType.AUDIO -> crontab.config.downloadAudios
+                AssetType.AUDIO -> false
             }
         }.ifEmpty { listOf(asset) }
     }
 
-    private fun mirrorMembership(asset: KNonNullTable<Asset>, taskId: Long) = or(asset.type eq AssetType.AUDIO, sql(Boolean::class,
+    private fun mirrorMembership(asset: KNonNullTable<Asset>, taskId: Long) = sql(Boolean::class,
         "exists (select 1 from mirror_members mm where mm.task_id = $taskId and mm.album_id = %e " +
             "and mm.group_key = substr(%e, 1, length(%e) - 1 - " +
             "length(coalesce(json_extract(case when json_valid(%e) then %e else '{}' end, '$.resource'), 'original'))))",
-        asset.albumId, asset.logicalResourceKey, asset.logicalResourceKey, asset.remoteKey, asset.remoteKey))
+        asset.albumId, asset.logicalResourceKey, asset.logicalResourceKey, asset.remoteKey, asset.remoteKey)
 
     private fun fetchAlbumsTimelineSnapshot(accountId: Long, albums: List<Album>): Map<Long, AlbumTimeline> {
         val albumTimelines = mutableMapOf<Long, AlbumTimeline>()
-        albums.filterNot { it.isAudioAlbum() }.forEach { album ->
+        albums.filter { it.remoteKey != "-1" }.forEach { album ->
             // remoteID -> AlbumTimeline
             albumTimelines[album.remoteKey.toLong()] = api.fetchAlbumTimeline(accountId, album.remoteKey.toLong())
         }

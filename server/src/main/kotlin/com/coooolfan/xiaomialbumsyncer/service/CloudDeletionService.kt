@@ -4,7 +4,6 @@ import com.coooolfan.xiaomialbumsyncer.icloud.ICloudChangePage
 import com.coooolfan.xiaomialbumsyncer.icloud.ICloudResourceKey
 import com.coooolfan.xiaomialbumsyncer.model.*
 import com.coooolfan.xiaomialbumsyncer.utils.MediaIdentity
-import com.coooolfan.xiaomialbumsyncer.utils.isAudioAlbum
 import org.babyfish.jimmer.sql.ast.mutation.SaveMode
 import org.babyfish.jimmer.sql.kt.KSqlClient
 import org.babyfish.jimmer.sql.kt.ast.expression.*
@@ -39,7 +38,7 @@ class CloudDeletionService(private val sql: KSqlClient, private val media: Cloud
             where(table.accountId eq crontab.accountId)
             where(table.id valueIn crontab.albumIds)
             select(table)
-        }.filterNot { it.isAudioAlbum() }.map { it.id }.toSet()
+        }.filter { it.remoteKey != "-1" }.map { it.id }.toSet()
         require(albums.keys == selected) { "镜像清单与任务相册范围不一致，本次保留文件" }
         val previous = inventory(crontab)
         val groups = knownGroups(crontab, zone, records)
@@ -88,7 +87,7 @@ class CloudDeletionService(private val sql: KSqlClient, private val media: Cloud
         while (true) {
             val page = sql.createQuery(Asset::class) {
                 where(table.album.accountId eq crontab.accountId)
-                where(table.type ne AssetType.AUDIO)
+                where(table.album.remoteKey ne "-1")
                 where(table.id gt lastId)
                 if (zone != null) where(sql(String::class, "json_extract(%e, '$.zone')", table.album.remoteKey) eq zone)
                 if (records != null) where(sql(String::class, "json_extract(%e, '$.assetId')", table.remoteKey) valueIn records)

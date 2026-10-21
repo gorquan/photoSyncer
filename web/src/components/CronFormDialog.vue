@@ -31,7 +31,7 @@ const props = defineProps<{
   formErrors: Record<string, string>
   timeZones: ReadonlyArray<string>
   accountOptions: ReadonlyArray<{ label: string; value: number; provider?: CloudProvider }>
-  formAlbumOptions: ReadonlyArray<{ label: string; value: number; recording?: boolean }>
+  formAlbumOptions: ReadonlyArray<{ label: string; value: number }>
   targetPathMountWarning: boolean
   validateCronForm: (fields?: readonly string[]) => boolean
 }>()
@@ -74,10 +74,6 @@ const stepFields: Partial<Record<Step, readonly string[]>> = {
   schedule: ['expression', 'timeZone', 'targetPath'],
 }
 
-const hasRecordingAlbum = computed(() =>
-  form.value.albumIds.some((id) => formAlbumOptions.value.find((o) => o.value === id)?.recording),
-)
-
 const isICloud = computed(() => selectedAccount.value?.provider === 'ICLOUD')
 watch(
   isICloud,
@@ -100,9 +96,7 @@ watch(
   { immediate: true },
 )
 
-const recommendedMode = computed<CrontabSyncMode>(() =>
-  isICloud.value ? 'CURSOR' : hasRecordingAlbum.value ? 'FULL' : 'TIMELINE',
-)
+const recommendedMode = computed<CrontabSyncMode>(() => (isICloud.value ? 'CURSOR' : 'TIMELINE'))
 
 const syncModeCards = computed(() =>
   (
@@ -357,10 +351,6 @@ watch(
               <div class="flex items-center gap-2 text-[13px] text-slate-600 dark:text-slate-300">
                 <Checkbox v-model="form.config.downloadVideos" binary />
                 <span>{{ t('cronform.toggle.downloadVideos') }}</span>
-              </div>
-              <div class="flex items-center gap-2 text-[13px] text-slate-600 dark:text-slate-300">
-                <Checkbox v-model="form.config.downloadAudios" binary />
-                <span>{{ t('cronform.toggle.downloadAudios') }}</span>
               </div>
             </div>
 

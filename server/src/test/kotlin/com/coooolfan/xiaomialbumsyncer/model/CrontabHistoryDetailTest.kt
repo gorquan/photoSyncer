@@ -811,7 +811,6 @@ class CrontabHistoryDetailTest {
             verifiers = 1,
             exifProcessors = 1,
             fileTimeWorkers = 1,
-            downloadAudios = true,
         )
     }
 

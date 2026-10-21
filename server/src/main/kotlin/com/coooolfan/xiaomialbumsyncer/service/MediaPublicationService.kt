@@ -36,7 +36,7 @@ class MediaPublicationService(private val sql: KSqlClient, private val media: Cl
             select(table.id, table.currentVersion)
         } }
         require(present.size == ids.size && (!details.first().crontabHistory.crontab.config.syncCloudDeletes || details.all {
-            it.asset.type == AssetType.AUDIO || mirrorContains(sql, it.crontabHistory.crontab.id, it.asset.album.id, MediaIdentity.of(it.asset).groupKey)
+            mirrorContains(sql, it.crontabHistory.crontab.id, it.asset.album.id, MediaIdentity.of(it.asset).groupKey)
         })) {
             "云端资源已删除或不可用，取消发布，等待删除同步"
         }
