@@ -14,7 +14,6 @@ export interface CrontabConfig {
     readonly verifiers: number;
     readonly exifProcessors: number;
     readonly fileTimeWorkers: number;
-    readonly downloadAudios: boolean;
     readonly notify: boolean;
     readonly downloadLivePhotos: boolean;
     /**

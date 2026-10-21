@@ -113,14 +113,11 @@ class ApiE2eSuite {
         assertEquals(3, albums.size())
         val cameraAlbumId = findAlbumId(albums, "1")
         val screenshotsAlbumId = findAlbumId(albums, "2")
-        val audioAlbumId = findAlbumId(albums, "-1")
         api.get("/api/album").expect(200)
 
         val cameraAssets = api.json(api.get("/api/asset/$cameraAlbumId/latest").expect(200))
         assertTrue(cameraAssets.first().path("checksum").asText().matches(Regex("[a-f0-9]{40}")))
         api.get("/api/asset/$cameraAlbumId").expect(200)
-        val audioAssets = api.json(api.get("/api/asset/$audioAlbumId/latest").expect(200))
-        assertEquals("sample-audio.m4a", audioAssets.first().path("fileName").asText())
         api.get("/api/album/date-map?albumIds=$cameraAlbumId").expect(200)
 
         val downloadDir = workDir.resolve("downloads")
@@ -140,7 +137,6 @@ class ApiE2eSuite {
             "verifiers" to 1,
             "exifProcessors" to 1,
             "fileTimeWorkers" to 1,
-            "downloadAudios" to false,
             "notify" to true,
         )
         val crontabBody = linkedMapOf<String, Any?>(
@@ -237,23 +233,12 @@ class ApiE2eSuite {
             baseConfig = config,
         )
 
-        executeRecordingWorkflows(
-            api = api,
-            mock = mock,
-            workDir = workDir,
-            accountId = accountId,
-            cameraAlbumId = cameraAlbumId,
-            audioAlbumId = audioAlbumId,
-            baseConfig = config,
-        )
-
         executeDeletedMediaWorkflows(
             api = api,
             mock = mock,
             workDir = workDir,
             accountId = accountId,
             cameraAlbumId = cameraAlbumId,
-            audioAlbumId = audioAlbumId,
             baseConfig = config,
         )
 
@@ -521,7 +506,6 @@ class ApiE2eSuite {
             this["targetPath"] = workDir.resolve("cursor-downloads").toString()
             this["downloadImages"] = true
             this["downloadVideos"] = false
-            this["downloadAudios"] = false
             this["notify"] = false
             this["skipExistingFile"] = false
         }
@@ -597,81 +581,10 @@ class ApiE2eSuite {
         api.delete("/api/crontab/$cursorCrontabId").expect(200)
     }
 
-    private fun executeRecordingWorkflows(
-        api: ApiClient,
-        mock: MockXiaomiApiServer,
-        workDir: Path,
-        accountId: Long,
-        cameraAlbumId: Long,
-        audioAlbumId: Long,
-        baseConfig: LinkedHashMap<String, Any?>,
-    ) {
-        val recordingConfig = LinkedHashMap(baseConfig).apply {
-            this["targetPath"] = workDir.resolve("recording-downloads").toString()
-            this["downloadImages"] = false
-            this["downloadVideos"] = false
-            this["downloadAudios"] = true
-            this["notify"] = false
-        }
-        val recordingCrontab = api.json(
-            api.post(
-                "/api/crontab",
-                linkedMapOf<String, Any?>(
-                    "name" to "Recording API E2E",
-                    "description" to "Recorder is independent from gallery",
-                    "enabled" to false,
-                    "syncMode" to "TIMELINE",
-                    "config" to recordingConfig,
-                    "accountId" to accountId,
-                    "albumIds" to listOf(audioAlbumId),
-                )
-            ).expect(200)
-        )
-        val recordingCrontabId = recordingCrontab.path("id").asLong()
-        api.post("/api/crontab/$recordingCrontabId/executions").expect(200)
-        val recordingHistoryId = awaitCompletedHistory(api, recordingCrontabId)
-        assertCompletedDetailCount(api, recordingHistoryId, 1)
-        val originalRecordingTransfers = mock.routePrefixCount("/sfs/ns/recorder/file/201/cb/")
-        assertTrue(originalRecordingTransfers >= 1)
-        api.delete("/api/crontab/$recordingCrontabId").expect(200)
-
-        val mixedConfig = LinkedHashMap(baseConfig).apply {
-            this["targetPath"] = workDir.resolve("mixed-downloads").toString()
-            this["downloadImages"] = true
-            this["downloadVideos"] = false
-            this["downloadAudios"] = true
-            this["notify"] = false
-        }
-        val mixedCrontab = api.json(
-            api.post(
-                "/api/crontab",
-                linkedMapOf<String, Any?>(
-                    "name" to "Mixed API E2E",
-                    "description" to "Gallery and recorder full refresh",
-                    "enabled" to false,
-                    "syncMode" to "TIMELINE",
-                    "config" to mixedConfig,
-                    "accountId" to accountId,
-                    "albumIds" to listOf(cameraAlbumId, audioAlbumId),
-                )
-            ).expect(200)
-        )
-        val mixedCrontabId = mixedCrontab.path("id").asLong()
-        api.post("/api/crontab/$mixedCrontabId/executions").expect(200)
-        val mixedHistoryId = awaitCompletedHistory(api, mixedCrontabId)
-        assertCompletedDetailCount(api, mixedHistoryId, 2)
-        api.delete("/api/crontab/$mixedCrontabId").expect(200)
-
-        assertTrue(mock.routeCount("/sfs/ns/recorder/dir/0/list") >= 3)
-        assertEquals(originalRecordingTransfers + 1, mock.routePrefixCount("/sfs/ns/recorder/file/201/cb/"), "新目标目录应从云端下载，不复用长期原件副本")
-        assertEquals(0, mock.timelineCount(-1), "录音是独立远端资源，不应请求 gallery timeline 的 -1")
-        assertTrue(mock.timelineCount(1) >= 1, "混合任务应只为真实相册请求时间线")
-    }
-
     /**
      * 云端已删除资产（列表仍可见但 storage 不可用）的下载应被优雅跳过，
      * 而不是抛异常导致流水线在每个周期反复失败。
-     * 相册删除 → code=50050；录音删除 → code=50202；两者均 retriable=false。
+     * 相册删除 → code=50050，按不可重试的来源错误处理。
      */
     private fun executeDeletedMediaWorkflows(
         api: ApiClient,
@@ -679,7 +592,6 @@ class ApiE2eSuite {
         workDir: Path,
         accountId: Long,
         cameraAlbumId: Long,
-        audioAlbumId: Long,
         baseConfig: LinkedHashMap<String, Any?>,
     ) {
         // ============ 相册：storage 返回 code=50050 ============
@@ -687,7 +599,6 @@ class ApiE2eSuite {
             this["targetPath"] = workDir.resolve("deleted-gallery-downloads").toString()
             this["downloadImages"] = true
             this["downloadVideos"] = false
-            this["downloadAudios"] = false
             this["notify"] = false
             this["skipExistingFile"] = false
         }
@@ -759,78 +670,7 @@ class ApiE2eSuite {
         assertEquals(0, mock.routePrefixCount("/mock/oss/103"), "已删除资产不应请求 OSS 签名直链")
         api.delete("/api/crontab/$galleryCrontabId").expect(200)
 
-        // ============ 录音：storage 返回 code=50202 ============
-        val recordingConfig = LinkedHashMap(baseConfig).apply {
-            this["targetPath"] = workDir.resolve("deleted-recording-downloads").toString()
-            this["downloadImages"] = false
-            this["downloadVideos"] = false
-            this["downloadAudios"] = true
-            this["notify"] = false
-            this["skipExistingFile"] = false
-        }
-        val recordingCrontab = api.json(
-            api.post(
-                "/api/crontab",
-                linkedMapOf<String, Any?>(
-                    "name" to "Deleted Recording E2E",
-                    "description" to "云端不可用录音保持失败并等待恢复",
-                    "enabled" to false,
-                    "syncMode" to "FULL",
-                    "config" to recordingConfig,
-                    "accountId" to accountId,
-                    "albumIds" to listOf(audioAlbumId),
-                )
-            ).expect(200)
-        )
-        val recordingCrontabId = recordingCrontab.path("id").asLong()
 
-        api.post("/api/crontab/$recordingCrontabId/executions").expect(200)
-        awaitCompletedHistory(api, recordingCrontabId)
-
-        // 云端新增录音 301 后被删除：列表可见，storage 返回 code=50202
-        mock.mutate(
-            mapOf(
-                "operations" to listOf(
-                    mapOf(
-                        "op" to "addRecordings",
-                        "userId" to "mock-user",
-                        "recordings" to listOf(
-                            mapOf(
-                                "id" to 301,
-                                "fileName" to "deleted-recording.m4a",
-                                "recordingType" to 0,
-                                "createTime" to 1714651200000L,
-                                "size" to 28,
-                                "sha1Mode" to "exact",
-                                "contentPattern" to "xiaomi-album-syncer-api-e2e\n",
-                            )
-                        ),
-                    ),
-                    mapOf(
-                        "op" to "markDeleted",
-                        "userId" to "mock-user",
-                        "ids" to listOf(301),
-                    ),
-                )
-            )
-        )
-
-        api.delete("/api/crontab/$recordingCrontabId/histories").expect(200)
-        api.post("/api/crontab/$recordingCrontabId/executions").expect(200)
-        val recordingHistoryId = awaitCompletedHistory(api, recordingCrontabId)
-        val recordingDetails = api.json(
-            api.get("/api/crontab/history/$recordingHistoryId/details?pageIndex=0&pageSize=10").expect(200)
-        )
-        assertEquals(2, recordingDetails.path("totalRowCount").asInt())
-
-        val deletedRecordingId = findAssetId(api, audioAlbumId, "301")
-        val deletedRecording = recordingDetails.path("rows").first { it.path("asset").path("id").asText() == deletedRecordingId }
-        assertFalse(deletedRecording.path("downloadCompleted").asBoolean())
-        assertEquals("FAILED", deletedRecording.path("publicationStatus").asText())
-        assertTrue(deletedRecording.path("message").asText().isNotBlank())
-        assertFalse(Files.exists(Path.of(deletedRecording.path("filePath").asText())), "已删除录音不应产出文件")
-        assertEquals(0, mock.routePrefixCount("/mock/oss/301"), "已删除录音不应请求 OSS 签名直链")
-        api.delete("/api/crontab/$recordingCrontabId").expect(200)
     }
 
     /**
@@ -849,7 +689,6 @@ class ApiE2eSuite {
             this["targetPath"] = workDir.resolve("transient-downloads").toString()
             this["downloadImages"] = true
             this["downloadVideos"] = false
-            this["downloadAudios"] = false
             this["notify"] = false
             this["skipExistingFile"] = false
         }

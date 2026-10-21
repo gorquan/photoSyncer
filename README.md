@@ -1,6 +1,6 @@
 # photoSyncer
 
-将小米云相册、录音与 Apple iCloud Photos 同步到本地，支持定时增量下载和 Synology Photos 展示。
+将小米云相册与 Apple iCloud Photos 的照片、视频同步到本地，支持定时增量下载和 Synology Photos 展示。
 
 本项目基于 [XiaomiAlbumSyncer](https://github.com/Coooolfan/XiaomiAlbumSyncer) 开发。**本仓库新增的 iCloud、群晖 Photos 与删除同步功能，需要使用本仓库构建产物；上游镜像不能代替。**
 

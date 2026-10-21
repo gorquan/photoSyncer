@@ -185,10 +185,7 @@ class CrontabPipeline(
             return "该任务的最新执行记录无可用于对比的时间线数据"
         }
 
-        val crontabAlbumRemoteIds = crontab.albums.mapTo(mutableSetOf()) { it.remoteKey.toLong() }
-        if (crontabAlbumRemoteIds.contains(-1L)) {
-            return "\"录音\"不支持时间线对比"
-        }
+        val crontabAlbumRemoteIds = crontab.albums.filter { it.remoteKey != "-1" }.mapTo(mutableSetOf()) { it.remoteKey.toLong() }
         if (albumTimelinesHistory.keys != crontabAlbumRemoteIds) {
             return "相册列表有变更"
         }

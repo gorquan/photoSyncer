@@ -2,9 +2,7 @@
 
 `expressionTargetPath` 允许你自定义下载文件的保存路径，并通过 `${...}` 插值填充动态信息。
 
-- 当 `expressionTargetPath` 为空、只包含空白，或**不包含任何支持的插值项**时，会自动回退到旧逻辑：
-  - 非音频：`targetPath/album/fileName`
-  - 音频：`targetPath/album/{assetId}_{fileName}`（避免录音重名覆盖）
+- 当 `expressionTargetPath` 为空、只包含空白，或**不包含任何支持的插值项**时，会自动回退到旧逻辑：`targetPath/album/fileName`。
 - 当 `expressionTargetPath` 有效时，`targetPath` 不参与任何逻辑（相对路径保持相对，需自行写全路径或接受相对路径行为）。
 - 时间格式化使用 `crontab.config.timeZone` 对应的时区（解析失败则使用系统默认时区）。
 - 时间格式化遵循 Java `DateTimeFormatter` 的标准格式（如 `yyyy-MM-dd`、`yyyy/MM`）。
@@ -25,8 +23,6 @@
 | `${fileExt}` | 文件扩展名（不含点） |
 | `${assetId}` | 资源 ID |
 | `${assetType}` | 资源类型（小写，如 `image`/`video`/`audio`） |
-| `${recordingTypeId}` | 录音分类原始 ID（非录音为空，如 `0`/`1`/`2`/`3`） |
-| `${recordingType}` | 录音分类中文名（非录音为空，如 `录音机录音`/`通话录音`/`FM录音`/`应用录音`） |
 | `${sha1}` | 资源 SHA1 |
 | `${title}` | 资源标题（已做路径安全处理） |
 | `${size}` | 资源大小（字节） |
@@ -77,23 +73,7 @@
 /data/${assetType}/${taken_yyyy/MM}/${fileStem}.${fileExt}
 ```
 
-### 示例 3：音频文件保持原名
-
-```
-${album}/${fileName}
-```
-
-音频 `rec.m4a` 会得到（相对路径）：
-
-```
-Recordings/rec.m4a
-```
-
-如需自行避免重名，可在模板里拼上 `${assetId}` 等字段。
-
 ## 兼容逻辑说明
 
-- `expressionTargetPath` 为空、空白或不包含支持的插值项时，仍会使用旧逻辑：
-  - 非音频：`targetPath/album/fileName`
-  - 音频：`targetPath/album/{assetId}_{fileName}`
+- `expressionTargetPath` 为空、空白或不包含支持的插值项时，仍会使用 `targetPath/album/fileName`。
 - 当 `expressionTargetPath` 有效时，不会自动拼接 `targetPath`。

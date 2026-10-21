@@ -26,7 +26,7 @@ export const useAlbumsStore = defineStore('albums', () => {
     error.value = null
     try {
       const list = await api.albumsController.listAlbums()
-      albums.value = sortAlbums(list)
+      albums.value = sortAlbums(list.filter((album) => album.remoteKey !== '-1'))
       loaded.value = true
       return albums.value
     } catch (err) {
@@ -44,7 +44,10 @@ export const useAlbumsStore = defineStore('albums', () => {
   async function refreshAlbumsForAccount(accountId: number) {
     const refreshedList = await api.albumsController.refreshAlbums({ accountId })
     const otherAccountAlbums = albums.value.filter((a) => a.account.id !== accountId)
-    albums.value = sortAlbums([...otherAccountAlbums, ...refreshedList])
+    albums.value = sortAlbums([
+      ...otherAccountAlbums,
+      ...refreshedList.filter((album) => album.remoteKey !== '-1'),
+    ])
     loaded.value = true
     return albums.value.filter((a) => a.account.id === accountId)
   }

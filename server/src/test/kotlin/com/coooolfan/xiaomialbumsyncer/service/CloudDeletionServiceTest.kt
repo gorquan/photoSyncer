@@ -151,10 +151,10 @@ class CloudDeletionServiceTest {
             CrontabService(sql).validateSyncConfig(job.accountId, mode, job.config)
     } }
 
-    @Test fun audioKeepsBackupBehaviorAndClearingHistoryResetsMirrorBaseline() = withStore { store -> with(store) {
+    @Test fun clearingHistoryResetsMirrorBaseline() = withStore { store -> with(store) {
         media.saveAssets(listOf(resource(albums[0], "A"), Asset(resource(albums[0], "audio", "audio")) { type = AssetType.AUDIO }))
         snapshot()
-        assertEquals(listOf("audio"), assets.getAssetsUndownloadByCrontab(job, 50, 0, true).map { it.checksum })
+        assertEquals(emptyList<String>(), assets.getAssetsUndownloadByCrontab(job, 50, 0, true).map { it.checksum })
         snapshot(mapOf(albums[0].id to setOf(key("record"))))
         assertTrue(mirrorContains(sql, job.id, albums[0].id, key("record")))
         CrontabService(sql).clearCrontabHistory(job.id)

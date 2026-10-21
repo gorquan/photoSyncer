@@ -83,22 +83,6 @@
             <div
               class="p-2 bg-slate-50 dark:bg-slate-900/40 rounded border border-slate-100 dark:border-slate-800"
             >
-              <div class="font-mono text-blue-600 mb-0.5">${recordingTypeId}</div>
-              <div class="text-slate-500 dark:text-slate-400 text-[13px]">
-                {{ t('help.expression.token.recordingTypeId') }}
-              </div>
-            </div>
-            <div
-              class="p-2 bg-slate-50 dark:bg-slate-900/40 rounded border border-slate-100 dark:border-slate-800"
-            >
-              <div class="font-mono text-blue-600 mb-0.5">${recordingType}</div>
-              <div class="text-slate-500 dark:text-slate-400 text-[13px]">
-                {{ t('help.expression.token.recordingType') }}
-              </div>
-            </div>
-            <div
-              class="p-2 bg-slate-50 dark:bg-slate-900/40 rounded border border-slate-100 dark:border-slate-800"
-            >
               <div class="font-mono text-blue-600 mb-0.5">${title}</div>
               <div class="text-slate-500 dark:text-slate-400 text-[13px]">
                 {{ t('help.expression.token.title') }}
@@ -226,13 +210,6 @@
       </h3>
       <p>{{ t('help.expression.tipsIntro') }}</p>
       <ul class="list-disc list-inside space-y-1.5 pl-1 text-[13px]">
-        <i18n-t keypath="help.expression.tipRecording" tag="li">
-          <template #token>
-            <code class="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-xs font-mono"
-              >${assetId}</code
-            >
-          </template>
-        </i18n-t>
         <i18n-t keypath="help.expression.tipOverwrite" tag="li">
           <template #misconfig>
             <span class="font-bold">{{ t('help.expression.misconfig') }}</span>
@@ -259,14 +236,6 @@
           </div>
           <code class="block w-full bg-slate-800 text-slate-200 p-2 rounded break-all">
             /data/${assetType}/${taken_yyyy/MM}/${fileStem}.${fileExt}
-          </code>
-        </div>
-        <div>
-          <div class="text-slate-500 dark:text-slate-400 mb-1">
-            {{ t('help.expression.examples.audioKeepName') }}
-          </div>
-          <code class="block w-full bg-slate-800 text-slate-200 p-2 rounded break-all">
-            Recordings/${fileName}
           </code>
         </div>
       </div>
