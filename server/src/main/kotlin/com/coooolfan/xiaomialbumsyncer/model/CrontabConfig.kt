@@ -50,11 +50,4 @@ data class CrontabConfig(
     /** Mirror confirmed library deletion: Xiaomi FULL/TIMELINE or iCloud FULL/CURSOR. */
     val syncCloudDeletes: Boolean = false,
 ) {
-    init {
-        if (synologyPhotos) {
-            require(targetPath.isNotBlank() && !targetPath.contains("${'$'}{")) {
-                "群晖 Photos 模式需要固定的目标根目录，不支持路径插值"
-            }
-        }
-    }
 }

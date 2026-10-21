@@ -17,7 +17,6 @@ import Button from 'primevue/button'
 import Message from 'primevue/message'
 import Tag from 'primevue/tag'
 import ProviderTag from '@/components/ProviderTag.vue'
-import ExpressionPathHelp from '@/components/ExpressionPathHelp.vue'
 import OptionCard from '@/components/OptionCard.vue'
 import CronHelp from '@/components/CronHelp.vue'
 import type { CloudProvider, CrontabSyncMode } from '@/__generated/model/enums'
@@ -178,29 +177,15 @@ watch(formErrors, (errors) => {
   if (target && target !== step.value) goToStep(target)
 })
 
-// 仅切换路径输入的提示和帮助内容，提交时由 targetPath 本身是否含插值决定
-const useExpressionPath = ref(false)
-const showExpressionHelp = ref(false)
+// 仅显示 Cron 帮助；保存路径始终是统一根目录。
 const showCronHelp = ref(false)
 
 function toggleCronHelp() {
   showCronHelp.value = !showCronHelp.value
-  if (showCronHelp.value) showExpressionHelp.value = false
-}
-
-function toggleExpressionHelp() {
-  showExpressionHelp.value = !showExpressionHelp.value
-  if (showExpressionHelp.value) showCronHelp.value = false
 }
 
 function openCronHelp() {
   showCronHelp.value = true
-  showExpressionHelp.value = false
-}
-
-function openExpressionHelp() {
-  showExpressionHelp.value = true
-  showCronHelp.value = false
 }
 
 function closeDialog() {
@@ -214,10 +199,8 @@ watch(
       savedPhotos.value = form.value.config.synologyPhotos === true
       step.value = 'basic'
       slideDir.value = 'slide-left'
-      useExpressionPath.value = form.value.config.targetPath.includes('${')
       return
     }
-    showExpressionHelp.value = false
     showCronHelp.value = false
   },
   { immediate: true },
@@ -230,7 +213,7 @@ watch(
     modal
     :class="[
       'transition-all duration-300',
-      showExpressionHelp || showCronHelp ? 'w-full sm:w-250' : 'w-full sm:w-130',
+      showCronHelp ? 'w-full sm:w-250' : 'w-full sm:w-130',
     ]"
   >
     <template #header>
@@ -541,48 +524,19 @@ watch(
             </div>
 
             <div class="space-y-2">
-              <div class="flex items-center justify-between">
-                <label class="block text-[13px] font-medium text-slate-500 dark:text-slate-400">{{
-                  t('cronform.field.targetPath')
-                }}</label>
-                <div v-if="!form.config.synologyPhotos" class="flex items-center gap-2">
-                  <Button
-                    v-if="useExpressionPath"
-                    icon="pi pi-question-circle"
-                    variant="text"
-                    severity="secondary"
-                    rounded
-                    size="small"
-                    class="w-6! h-6!"
-                    @click="toggleExpressionHelp"
-                  />
-                  <span class="text-[13px] text-slate-500 dark:text-slate-400">{{
-                    t('cronform.field.useExpressionPath')
-                  }}</span>
-                  <Checkbox v-model="useExpressionPath" binary />
-                </div>
-              </div>
+              <label class="block text-[13px] font-medium text-slate-500 dark:text-slate-400">{{
+                t('cronform.field.targetPath')
+              }}</label>
               <InputText
                 v-model="form.config.targetPath"
-                :placeholder="
-                  !form.config.synologyPhotos && useExpressionPath
-                    ? '/app/download/${album}/${fileName}'
-                    : '/app/download'
-                "
+                placeholder="/photos"
                 class="w-full"
-                @focus="!form.config.synologyPhotos && useExpressionPath && openExpressionHelp()"
               />
               <div v-if="formErrors.targetPath" class="text-[13px] text-red-600">
                 {{ formErrors.targetPath }}
               </div>
               <div class="text-[13px] text-slate-500 dark:text-slate-400">
-                {{
-                  form.config.synologyPhotos
-                    ? t('cronform.field.targetPathPhotosHint')
-                    : useExpressionPath
-                      ? t('cronform.field.targetPathExpressionHint')
-                      : t('cronform.field.targetPathHint')
-                }}
+                {{ t('cronform.field.targetPathPhotosHint') }}
               </div>
               <Message
                 v-if="props.targetPathMountWarning"
@@ -819,10 +773,9 @@ watch(
       </div>
 
       <div
-        v-if="showExpressionHelp || showCronHelp"
+        v-if="showCronHelp"
         class="flex-1 border-l border-slate-100 dark:border-slate-800 pl-8 hidden lg:block min-w-0 overflow-y-auto"
       >
-        <ExpressionPathHelp v-if="showExpressionHelp" />
         <CronHelp v-if="showCronHelp" />
       </div>
     </div>
