@@ -229,7 +229,6 @@ val apiMemoryBenchmarkJvm by tasks.registering(Test::class) {
             "xiaomi.benchmark.fetchFromDbSize",
             "xiaomi.benchmark.verifiers",
             "xiaomi.benchmark.exifProcessors",
-            "xiaomi.benchmark.fileTimeWorkers",
             "xiaomi.benchmark.incrementalCount",
             "xiaomi.benchmark.timeoutMinutes",
             "xiaomi.benchmark.keepWorkDir",
@@ -237,7 +236,6 @@ val apiMemoryBenchmarkJvm by tasks.registering(Test::class) {
             "xiaomi.benchmark.maxHeap",
             "xiaomi.benchmark.softMaxHeap",
             "xiaomi.benchmark.periodicGcInterval",
-            "xiaomi.benchmark.rewriteExifTime",
             "xiaomi.benchmark.contentMode",
         ).forEach { name ->
             providers.gradleProperty(name).orNull?.let { systemProperty(name, it) }

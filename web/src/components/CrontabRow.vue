@@ -28,8 +28,6 @@ const emit = defineEmits<{
   (e: 'delete'): void
   (e: 'toggle'): void
   (e: 'execute'): void
-  (e: 'executeExif'): void
-  (e: 'executeRewriteFsTime'): void
   (e: 'clearHistory'): void
   (e: 'viewHistoryDetails', history: CrontabHistory): void
   (e: 'refresh'): void

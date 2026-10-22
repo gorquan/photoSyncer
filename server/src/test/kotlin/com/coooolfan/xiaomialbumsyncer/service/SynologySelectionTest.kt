@@ -139,38 +139,6 @@ class SynologySelectionTest {
         assertEquals(1, service.publicationGroup(job(albums), selected.single()).size)
     }
 
-    @Test fun manualMetadataPatchUsesLatestPublishedPathOwnerAndCurrentVersion() = withStore { sql, media, _, albums ->
-        val config = job(albums).config
-        val task = sql.saveCommand(Crontab {
-            name = "manual"; description = ""; enabled = false; syncMode = CrontabSyncMode.FULL
-            accountId = albums[0].accountId; this.config = config
-        }, SaveMode.INSERT_ONLY).execute().modifiedEntity
-        val history = sql.saveCommand(CrontabHistory {
-            crontab = task; startTime = Instant.EPOCH; endTime = Instant.EPOCH
-            fetchedAllAssets = true; syncCursors = null; timelineSnapshot = null
-        }, SaveMode.INSERT_ONLY).execute().modifiedEntity
-        fun publish(asset: Asset, path: String) {
-            sql.saveCommand(CrontabHistoryDetail {
-                crontabHistory = history; this.asset = asset; filePath = path
-                downloadTime = Instant.EPOCH
-                downloadCompleted = true; sha1Verified = true; exifFilled = true; fsTimeUpdated = true
-                publicationStatus = "PUBLISHED"; message = null
-            }, SaveMode.INSERT_ONLY).execute()
-        }
-        val input = resource(albums[0], "A", "record", "resOriginal")
-        val first = media.saveAssets(listOf(input)).single()
-        val path = directory.resolve("out/photo.jpg").toString()
-        publish(first, path)
-        val second = media.saveAssets(listOf(Asset(input) { checksum = "B" })).single()
-        publish(second, path)
-        val service = CrontabService(sql)
-        assertEquals(setOf(second.id), service.fetchAssetPathMapBy(task.id).keys.map { it.id }.toSet())
-        media.saveAssets(listOf(input)) // A is current again, but B still owns the physical export.
-        assertTrue(service.fetchAssetPathMapBy(task.id).isEmpty())
-        publish(first, path)
-        assertEquals(setOf(first.id), service.fetchAssetPathMapBy(task.id).keys.map { it.id }.toSet())
-    }
-
     @Test fun plannedTotalIsFixedBeforeAndAcrossProcessingBatches() = withStore { sql, media, assets, albums ->
         media.saveAssets(listOf(
             resource(albums[0], "photo", "live", "resOriginal"),
@@ -232,7 +200,7 @@ class SynologySelectionTest {
     }
 
     @Test fun oldJsonRetainsLayoutWhileEnablingLiveCompanions() {
-        val config = jacksonObjectMapper().readValue<CrontabConfig>("""{"expression":"0 0 * * * ?","timeZone":"UTC","targetPath":"/data/\u0024{album}/\u0024{fileName}","downloadImages":true,"downloadVideos":false,"rewriteExifTime":false,"rewriteExifTimeZone":null}""")
+        val config = jacksonObjectMapper().readValue<CrontabConfig>("""{"expression":"0 0 * * * ?","timeZone":"UTC","targetPath":"/data/\u0024{album}/\u0024{fileName}","downloadImages":true,"downloadVideos":false}""")
         assertFalse(config.synologyPhotos)
         assertTrue(config.downloadLivePhotos)
         assertFalse(config.checkSha1)
@@ -253,7 +221,7 @@ class SynologySelectionTest {
 
     private fun job(selected: List<Album>) = Crontab {
         id = 1; accountId = selected.first().accountId; name = "test"; albumIds = selected.map { it.id }
-        config = CrontabConfig("0 0 * * * ?", "UTC", directory.resolve("out").toString(), true, true, false, null, synologyPhotos = true)
+        config = CrontabConfig("0 0 * * * ?", "UTC", directory.resolve("out").toString(), true, true, false, synologyPhotos = true)
     }
 
     private fun withStore(provider: CloudProvider = CloudProvider.ICLOUD, action: (KSqlClient, CloudMediaService, AssetService, List<Album>) -> Unit) {

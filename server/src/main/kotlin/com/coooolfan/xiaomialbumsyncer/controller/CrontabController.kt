@@ -160,42 +160,6 @@ class CrontabController(private val service: CrontabService) {
 
 
     /**
-     * 立即执行指定定时任务的EXIF填充操作
-     *
-     * 此接口用于立即执行指定定时任务中的EXIF填充操作
-     * 需要用户登录认证才能访问（类级别注解）
-     *
-     * @param crontabId 定时任务ID，用于指定要执行EXIF填充操作的任务
-     *
-     * @api POST /api/crontab/{crontabId}/fill-exif/executions
-     * @permission 需要登录认证
-     * @description 调用CrontabService.executeCrontabExifTime()方法立即执行EXIF填充操作
-     */
-    @Api
-    @Mapping("/{crontabId}/fill-exif/executions", method = [MethodType.POST])
-    fun executeCrontabExifTime(@Path crontabId: Long) {
-        service.executeCrontabExifTime(crontabId)
-    }
-
-    /**
-     * 立即执行指定定时任务的文件系统时间重写操作
-     *
-     * 此接口用于立即执行指定定时任务中的文件系统时间重写操作
-     * 需要用户登录认证才能访问（类级别注解）
-     *
-     * @param crontabId 定时任务ID，用于指定要执行文件系统时间重写操作的任务
-     *
-     * @api POST /api/crontab/{crontabId}/rewrite-fs-time/executions
-     * @permission 需要登录认证
-     * @description 调用CrontabService.executeCrontabRewriteFileSystemTime()方法立即执行文件系统时间重写操作
-     */
-    @Api
-    @Mapping("/{crontabId}/rewrite-fs-time/executions", method = [MethodType.POST])
-    fun executeCrontabRewriteFileSystemTime(@Path crontabId: Long) {
-        service.executeCrontabRewriteFileSystemTime(crontabId)
-    }
-
-    /**
      * 分页获取指定执行历史的明细记录
      *
      * 此接口用于查看某次定时任务执行过程中产生的资源级明细数据，

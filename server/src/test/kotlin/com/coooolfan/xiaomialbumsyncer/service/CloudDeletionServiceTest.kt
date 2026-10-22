@@ -181,7 +181,7 @@ class CloudDeletionServiceTest {
     } }
 
     @Test fun oldConfigDefaultsToBackup() {
-        val old = jacksonObjectMapper().readValue<CrontabConfig>("""{"expression":"0 0 * * * ?","timeZone":"UTC","targetPath":"/out","downloadImages":true,"downloadVideos":true,"rewriteExifTime":false,"rewriteExifTimeZone":null}""")
+        val old = jacksonObjectMapper().readValue<CrontabConfig>("""{"expression":"0 0 * * * ?","timeZone":"UTC","targetPath":"/out","downloadImages":true,"downloadVideos":true}""")
         assertFalse(old.syncCloudDeletes)
     }
 
@@ -236,7 +236,7 @@ class CloudDeletionServiceTest {
             }, SaveMode.INSERT_ONLY).execute().modifiedEntity }
             val task = sql.saveCommand(Crontab {
                 name = "test"; description = ""; enabled = false; syncMode = CrontabSyncMode.FULL; accountId = account.id
-                config = CrontabConfig("0 0 * * * ?", "UTC", directory.resolve("out").toString(), true, true, false, null,
+                config = CrontabConfig("0 0 * * * ?", "UTC", directory.resolve("out").toString(), true, true, false,
                     synologyPhotos = true, syncCloudDeletes = true)
             }, SaveMode.INSERT_ONLY).execute().modifiedEntity
             val job = Crontab(task) { albumIds = albums.take(2).map { it.id } }

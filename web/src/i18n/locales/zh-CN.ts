@@ -217,16 +217,6 @@ export default {
         header: '立即执行',
         message: '确定要立即触发该计划任务的执行吗？该操作较为耗时，将在后台执行。',
       },
-      executeExif: {
-        header: '立即执行 EXIF 填充',
-        message:
-          '确定要手动触发该计划任务的 EXIF 填充操作吗？该操作较为耗时，将在后台执行。可观察程序日志查看进度。',
-      },
-      executeRewriteFs: {
-        header: '立即重写文件系统时间',
-        message:
-          '确定要对该计划任务已下载的文件执行文件系统时间重写吗？该操作较为耗时，将在后台执行。可观察程序日志查看进度。',
-      },
       clearHistory: {
         header: '清理任务历史',
         line1: '确定要清空该任务的执行历史与下载记录吗？',
@@ -291,8 +281,6 @@ export default {
       deleted: '已删除',
       deleteFailed: '删除失败',
       triggered: '已触发',
-      exifTriggered: '已触发 EXIF 填充',
-      fsRewriteTriggered: '已触发文件时间重写',
       triggerFailed: '触发失败',
       historyCleared: '已清理历史',
       clearFailed: '清理失败',
@@ -424,18 +412,12 @@ export default {
       syncModeTimelineHint: '通过对比上一次同步的相册时间线，将获取范围限定为存在变动的日期。',
       syncModeCursorHint:
         '从上次同步位点读取变化记录，支持断点续拉；首次同步或位点失效时自动建立全量基线。',
-      rewriteExifTime: '填充 EXIF 时间',
-      rewriteExifTimeHint: '已并入群晖 Photos 适配：开启群晖适配时自动写入云端记录的资产时间。',
       skipExistingFile: '跳过已存在文件',
       skipExistingFileHint:
         '若资产的目标文件路径已存在，将跳过下载。仅适用于保存路径中已有存量数据。',
-      rewriteFileSystemTime: '重写文件时间',
-      rewriteFileSystemTimeHint: '文件系统时间不再作为同步配置。',
       checkSha1: '校验文件',
       checkSha1Hint:
         '小米比对源 SHA-1；iCloud 检查大小和支持的容器结构，并记录本地 SHA-256（不代表与苹果源摘要比对）。失败后下一轮重试。',
-      exifTimeZone: 'EXIF 时区',
-      exifTimeZoneHint: '用于群晖 Photos 适配写入 EXIF 的时区。',
     },
     concurrency: {
       title: '并发与性能',
@@ -444,8 +426,6 @@ export default {
       fetchFromDbSizeHint: '每次从数据库拉取的资产数量',
       downloaders: '资产下载',
       downloadersHint: '同时下载的资产数',
-      fileTimeWorkers: '文件系统时间重写',
-      fileTimeWorkersHint: '文件系统时间重写并发数',
       verifiers: '文件校验',
       verifiersHint: '文件校验并发数',
       exifProcessors: 'EXIF 填充',

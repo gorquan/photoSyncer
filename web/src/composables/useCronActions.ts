@@ -16,8 +16,6 @@ type CrontabsStore = {
   updateCrontab: (crontabId: number, body: CrontabUpdateInput) => Promise<unknown>
   deleteCrontab: (crontabId: number) => Promise<void>
   executeCrontab: (crontabId: number) => Promise<unknown>
-  executeCrontabExifTime: (crontabId: number) => Promise<unknown>
-  executeCrontabRewriteFileSystemTime: (crontabId: number) => Promise<unknown>
   clearCrontabHistory: (crontabId: number) => Promise<unknown>
 }
 
@@ -49,8 +47,6 @@ export function useCronActions(options: UseCronActionsOptions) {
 
   const deleteDialog = useActionDialog()
   const executeDialog = useActionDialog()
-  const executeExifDialog = useActionDialog()
-  const executeRewriteFsDialog = useActionDialog()
   const clearHistoryDialog = useActionDialog()
 
   function requestDelete(row: Crontab) {
@@ -59,14 +55,6 @@ export function useCronActions(options: UseCronActionsOptions) {
 
   function requestExecute(row: Crontab) {
     executeDialog.open(row.id)
-  }
-
-  function requestExecuteExif(row: Crontab) {
-    executeExifDialog.open(row.id)
-  }
-
-  function requestExecuteRewriteFs(row: Crontab) {
-    executeRewriteFsDialog.open(row.id)
   }
 
   function requestClearHistory(row: Crontab) {
@@ -187,56 +175,6 @@ export function useCronActions(options: UseCronActionsOptions) {
     }
   }
 
-  async function confirmExecuteExif() {
-    if (executeExifDialog.targetId.value === null) return
-    executeExifDialog.loading.value = true
-    try {
-      await crontabsStore.executeCrontabExifTime(executeExifDialog.targetId.value)
-      toast.add({
-        severity: 'success',
-        summary: i18n.global.t('schedule.toast.exifTriggered'),
-        life: 2000,
-      })
-      executeExifDialog.close()
-      await fetchCrontabs()
-    } catch (err) {
-      console.error('立即执行 EXIF 填充失败', err)
-      toast.add({
-        severity: 'error',
-        summary: i18n.global.t('schedule.toast.triggerFailed'),
-        detail: err instanceof Error ? err.message : String(err),
-        life: 2200,
-      })
-    } finally {
-      executeExifDialog.loading.value = false
-    }
-  }
-
-  async function confirmExecuteRewriteFs() {
-    if (executeRewriteFsDialog.targetId.value === null) return
-    executeRewriteFsDialog.loading.value = true
-    try {
-      await crontabsStore.executeCrontabRewriteFileSystemTime(executeRewriteFsDialog.targetId.value)
-      toast.add({
-        severity: 'success',
-        summary: i18n.global.t('schedule.toast.fsRewriteTriggered'),
-        life: 2000,
-      })
-      executeRewriteFsDialog.close()
-      await fetchCrontabs()
-    } catch (err) {
-      console.error('立即执行文件系统时间重写失败', err)
-      toast.add({
-        severity: 'error',
-        summary: i18n.global.t('schedule.toast.triggerFailed'),
-        detail: err instanceof Error ? err.message : String(err),
-        life: 2200,
-      })
-    } finally {
-      executeRewriteFsDialog.loading.value = false
-    }
-  }
-
   async function confirmClearHistory() {
     if (clearHistoryDialog.targetId.value === null) return
     clearHistoryDialog.loading.value = true
@@ -267,20 +205,14 @@ export function useCronActions(options: UseCronActionsOptions) {
     updatingRow,
     deleteDialog,
     executeDialog,
-    executeExifDialog,
-    executeRewriteFsDialog,
     clearHistoryDialog,
     requestDelete,
     requestExecute,
-    requestExecuteExif,
-    requestExecuteRewriteFs,
     requestClearHistory,
     submitCron,
     toggleEnabled,
     confirmDelete,
     confirmExecute,
-    confirmExecuteExif,
-    confirmExecuteRewriteFs,
     confirmClearHistory,
   }
 }

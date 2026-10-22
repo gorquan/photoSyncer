@@ -1,14 +1,11 @@
 package com.coooolfan.xiaomialbumsyncer.config
 
 import com.coooolfan.xiaomialbumsyncer.controller.CrontabController.Companion.CRONTAB_WITH_ALBUMS_FETCHER
-import com.coooolfan.xiaomialbumsyncer.model.Asset
 import com.coooolfan.xiaomialbumsyncer.model.Crontab
-import com.coooolfan.xiaomialbumsyncer.model.SystemConfig
 import com.coooolfan.xiaomialbumsyncer.model.enabled
 import com.coooolfan.xiaomialbumsyncer.pipeline.CrontabPipeline
 import com.coooolfan.xiaomialbumsyncer.service.NotifyService
 import com.coooolfan.xiaomialbumsyncer.service.SystemConfigService.Companion.CONFIG_ID
-import com.coooolfan.xiaomialbumsyncer.utils.SingleStagePatch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.babyfish.jimmer.sql.kt.KSqlClient
@@ -18,7 +15,6 @@ import org.noear.solon.annotation.Managed
 import org.noear.solon.scheduling.annotation.Scheduled
 import org.noear.solon.scheduling.scheduled.manager.IJobManager
 import org.slf4j.LoggerFactory
-import java.nio.file.Path
 import java.text.ParseException
 import java.util.*
 import java.util.concurrent.Executor
@@ -27,7 +23,6 @@ import java.util.concurrent.Executor
 class TaskScheduler(
     private val jobManager: IJobManager,
     private val sql: KSqlClient,
-    private val singleStagePatch: SingleStagePatch,
     private val pipeline: CrontabPipeline,
     private val notifyService: NotifyService,
     private val thread: Executor
@@ -127,27 +122,6 @@ class TaskScheduler(
             }
         } finally {
             runningCrontabs.remove(crontab.id)
-        }
-    }
-
-    fun executeCrontabExifTime(
-        async: Boolean = true, assetPathMap: Map<Asset, Path>,
-        systemConfig: SystemConfig, timeZone: TimeZone
-    ) {
-        if (async) {
-            thread.execute { singleStagePatch.fillExifTime(assetPathMap, systemConfig, timeZone) }
-        } else {
-            singleStagePatch.fillExifTime(assetPathMap, systemConfig, timeZone)
-        }
-    }
-
-    fun executeCrontabRewriteFileSystemTime(
-        async: Boolean = true, assetPathMap: Map<Asset, Path>
-    ) {
-        if (async) {
-            thread.execute { singleStagePatch.rewriteFileSystemTime(assetPathMap) }
-        } else {
-            singleStagePatch.rewriteFileSystemTime(assetPathMap)
         }
     }
 

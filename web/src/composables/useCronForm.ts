@@ -103,7 +103,7 @@ export function useCronForm(getDefaultAccountId: () => number) {
   function openEditCron(item: Crontab) {
     isEditing.value = true
     editingId.value = item.id
-    cronForm.value = mapCrontabToForm(item, defaultTz)
+    cronForm.value = mapCrontabToForm(item)
     formErrors.value = {}
     showCronDialog.value = true
   }

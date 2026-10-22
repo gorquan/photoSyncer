@@ -53,16 +53,12 @@ export function createDefaultCronConfig(defaultTz: string): CrontabConfig {
     downloadLivePhotos: true,
     synologyPhotos: true,
     syncCloudDeletes: true,
-    rewriteExifTime: false,
-    rewriteExifTimeZone: defaultTz,
     skipExistingFile: true,
-    rewriteFileSystemTime: false,
     checkSha1: true,
     fetchFromDbSize: 2,
     downloaders: 8,
     verifiers: 2,
     exifProcessors: 2,
-    fileTimeWorkers: 2,
     notify: true,
   }
 }
@@ -79,7 +75,7 @@ export function createEmptyCronForm(defaultTz: string, accountId: number): Local
   }
 }
 
-export function mapCrontabToForm(item: Crontab, fallbackTz: string): LocalCronForm {
+export function mapCrontabToForm(item: Crontab): LocalCronForm {
   return {
     name: item.name,
     description: item.description,
@@ -95,16 +91,12 @@ export function mapCrontabToForm(item: Crontab, fallbackTz: string): LocalCronFo
       downloadLivePhotos: item.config.downloadLivePhotos ?? true,
       synologyPhotos: item.config.synologyPhotos ?? false,
       syncCloudDeletes: item.config.syncCloudDeletes ?? false,
-      rewriteExifTime: item.config.rewriteExifTime,
-      rewriteExifTimeZone: item.config.rewriteExifTimeZone ?? item.config.timeZone ?? fallbackTz,
       skipExistingFile: item.config.skipExistingFile ?? true,
-      rewriteFileSystemTime: item.config.rewriteFileSystemTime ?? false,
       checkSha1: item.config.checkSha1 ?? false,
       fetchFromDbSize: item.config.fetchFromDbSize ?? 2,
       downloaders: item.config.downloaders ?? 8,
       verifiers: item.config.verifiers ?? 2,
       exifProcessors: item.config.exifProcessors ?? 2,
-      fileTimeWorkers: item.config.fileTimeWorkers ?? 2,
       notify: item.config.notify ?? true,
     },
     albumIds: [...item.albumIds],

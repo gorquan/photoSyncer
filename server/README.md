@@ -109,17 +109,17 @@ JVM 与 ExifTool 等子进程的进程树 RSS 峰值、NMT 摘要、Mock 实际�
   -Pxiaomi.benchmark.incrementalCount=20 \
   -Pxiaomi.benchmark.keepWorkDir=true
 
-# 复现默认并发下开启“填充 EXIF 时间”的真实图片处理链路
+# 复现默认并发下开启群晖 Photos 适配的真实图片处理链路
 ./gradlew apiMemoryBenchmarkJvm \
   -Pxiaomi.benchmark.scenario=../xas-mock/scenarios/memory-profile-exif.json \
-  -Pxiaomi.benchmark.rewriteExifTime=true \
+  -Pxiaomi.benchmark.synologyPhotos=true \
   -Pxiaomi.benchmark.contentMode=jpeg \
   -Pxiaomi.benchmark.keepWorkDir=true
 ```
 
 还可以使用 `xiaomi.benchmark.downloaders`、`xiaomi.benchmark.fetchFromDbSize`、
-`xiaomi.benchmark.verifiers`、`xiaomi.benchmark.exifProcessors`、`xiaomi.benchmark.fileTimeWorkers`、
-`xiaomi.benchmark.incrementalCount`、`xiaomi.benchmark.periodicGcInterval`、`xiaomi.benchmark.rewriteExifTime`、
+`xiaomi.benchmark.verifiers`、`xiaomi.benchmark.exifProcessors`、
+`xiaomi.benchmark.incrementalCount`、`xiaomi.benchmark.periodicGcInterval`、`xiaomi.benchmark.synologyPhotos`、
 `xiaomi.benchmark.contentMode` 和 `xiaomi.benchmark.scenario`
 覆盖矩阵参数。基准下载目录位于报告目录下，
 成功后仅在 `keepWorkDir=true` 时保留。

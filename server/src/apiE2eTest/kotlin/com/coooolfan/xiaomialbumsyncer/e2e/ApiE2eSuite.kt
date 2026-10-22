@@ -127,16 +127,12 @@ class ApiE2eSuite {
             "targetPath" to downloadDir.toString(),
             "downloadImages" to true,
             "downloadVideos" to false,
-            "rewriteExifTime" to false,
-            "rewriteExifTimeZone" to "UTC",
             "skipExistingFile" to false,
-            "rewriteFileSystemTime" to false,
             "checkSha1" to true,
             "fetchFromDbSize" to 2,
             "downloaders" to 1,
             "verifiers" to 1,
             "exifProcessors" to 1,
-            "fileTimeWorkers" to 1,
             "notify" to true,
         )
         val crontabBody = linkedMapOf<String, Any?>(

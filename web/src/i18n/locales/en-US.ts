@@ -220,16 +220,6 @@ const messages: typeof zh = {
         message:
           'Trigger this scheduled task now? It is a long-running operation and will run in the background.',
       },
-      executeExif: {
-        header: 'Run EXIF Fill Now',
-        message:
-          'Manually trigger the EXIF fill for this task? It is a long-running operation and will run in the background. Check the logs for progress.',
-      },
-      executeRewriteFs: {
-        header: 'Rewrite Filesystem Time Now',
-        message:
-          'Rewrite the filesystem time of files downloaded by this task? It is a long-running operation and will run in the background. Check the logs for progress.',
-      },
       clearHistory: {
         header: 'Clear Task History',
         line1: 'Clear the execution history and download records of this task?',
@@ -294,8 +284,6 @@ const messages: typeof zh = {
       deleted: 'Deleted',
       deleteFailed: 'Delete failed',
       triggered: 'Triggered',
-      exifTriggered: 'EXIF fill triggered',
-      fsRewriteTriggered: 'File time rewrite triggered',
       triggerFailed: 'Trigger failed',
       historyCleared: 'History cleared',
       clearFailed: 'Clear failed',
@@ -432,19 +420,12 @@ const messages: typeof zh = {
         'Compares the album timeline from the previous sync and only fetches assets on dates that changed.',
       syncModeCursorHint:
         'Read changes from the previous sync cursor with resume support. The first sync or an invalid cursor builds a full baseline.',
-      rewriteExifTime: 'Fill EXIF time',
-      rewriteExifTimeHint:
-        'Included in Synology Photos compatibility: enabling it writes the cloud capture time into EXIF automatically.',
       skipExistingFile: 'Skip existing files',
       skipExistingFileHint:
         'Skips the download if the target file already exists. Only applies when the save path already contains data.',
-      rewriteFileSystemTime: 'Rewrite file time',
-      rewriteFileSystemTimeHint: 'File system time is no longer a sync setting.',
       checkSha1: 'Verify files',
       checkSha1Hint:
         'Xiaomi compares source SHA-1. iCloud checks size and supported containers and records local SHA-256; this does not compare an Apple source digest. Failures retry next run.',
-      exifTimeZone: 'EXIF time zone',
-      exifTimeZoneHint: 'Time zone used when Synology Photos compatibility writes EXIF.',
     },
     concurrency: {
       title: 'Concurrency & performance',
@@ -453,8 +434,6 @@ const messages: typeof zh = {
       fetchFromDbSizeHint: 'Number of assets pulled from the database each time',
       downloaders: 'Asset downloads',
       downloadersHint: 'Assets downloaded in parallel',
-      fileTimeWorkers: 'File time rewrite',
-      fileTimeWorkersHint: 'File system time rewrite workers',
       verifiers: 'File verification',
       verifiersHint: 'File verification workers',
       exifProcessors: 'EXIF fill',
