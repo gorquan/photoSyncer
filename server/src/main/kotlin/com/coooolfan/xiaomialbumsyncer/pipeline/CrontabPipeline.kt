@@ -119,8 +119,7 @@ class CrontabPipeline(
             val groupWorkers = buildList {
                 add(crontab.config.downloaders)
                 add(crontab.config.verifiers)
-                if (crontab.config.rewriteExifTime) add(crontab.config.exifProcessors)
-                if (crontab.config.rewriteFileSystemTime) add(crontab.config.fileTimeWorkers)
+                if (crontab.config.synologyPhotos) add(crontab.config.exifProcessors)
             }.min().coerceIn(1, 512)
             do {
                 currentCoroutineContext().ensureActive()
@@ -155,11 +154,10 @@ class CrontabPipeline(
                 if (assets.isNotEmpty()) lastId = assets.last().id
             } while (assets.isNotEmpty())
 
+            outcome = if (success != total || deletionReport?.status == "INCOMPLETE") "PARTIAL" else "SUCCESS"
             // 异步发送通知
             if (crontab.config.notify)
-                CoroutineScope(Dispatchers.IO).launch { notifyService.send(crontab, success, total) }
-
-            outcome = if (success != total || deletionReport?.status == "INCOMPLETE") "PARTIAL" else "SUCCESS"
+                CoroutineScope(Dispatchers.IO).launch { notifyService.send(crontab, success, total, outcome) }
             log.info("Crontab {} 的流水线执行完毕, 成功 {}/{}", crontab.id, success, total)
         } catch (cancelled: CancellationException) {
             deletionReport = crontabService.deletionReport(crontabHistory)
@@ -173,6 +171,11 @@ class CrontabPipeline(
             deletionReport?.takeIf { it.status in setOf("CHECKING", "RUNNING") }?.let {
                 crontabService.recordDeletionReport(crontabHistory, it.copy(status = "FAILED",
                     message = if (it.status == "CHECKING") "云端删除检查失败；已提交进度保留，本次未执行文件清理或发布，下次重试。" else if (cleanupStarted) "文件清理未完成；报告保留已记录的处理结果，下次同步将继续重试。" else "元数据刷新未完成，本次未开始文件清理，已保留文件；下次从已提交进度继续。"))
+            }
+            if (crontab.config.notify) {
+                CoroutineScope(Dispatchers.IO).launch {
+                    notifyService.sendFailure(crontab, crontabHistory, failure)
+                }
             }
             throw failure
         } finally {

@@ -29,12 +29,9 @@ class ExifProcessingStage(
             return context
         }
 
-        if (context.crontabHistory.crontab.config.rewriteExifTime) {
+        if (context.crontabHistory.crontab.config.synologyPhotos) {
             val rewriteExifTimeZone = context.crontabHistory.crontab.config.rewriteExifTimeZone
-            if (rewriteExifTimeZone == null) {
-                log.warn("未指定有效的时区，填充 EXIF 时间操作将被跳过。时区字符串：$rewriteExifTimeZone")
-                return context
-            }
+                ?: context.crontabHistory.crontab.config.timeZone
 
             val config = ExifRewriteConfig(
                 Path(systemConfig.exifToolPath),

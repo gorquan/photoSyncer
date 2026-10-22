@@ -78,6 +78,9 @@ const interpolationGroups = computed(() => [
       { token: '${crontab.id}', description: t('notify.interpolation.crontabId') },
       { token: '${success}', description: t('notify.interpolation.success') },
       { token: '${total}', description: t('notify.interpolation.total') },
+      { token: '${status}', description: t('notify.interpolation.status') },
+      { token: '${error}', description: t('notify.interpolation.error') },
+      { token: '${history.id}', description: t('notify.interpolation.historyId') },
     ],
   },
   {
@@ -153,6 +156,9 @@ const previewGroups = computed(() => [
       'crontab.id': '1',
       success: '128',
       total: '130',
+      status: 'PARTIAL',
+      error: '',
+      'history.id': '42',
     }),
   },
   {

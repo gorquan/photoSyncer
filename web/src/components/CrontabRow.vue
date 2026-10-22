@@ -249,11 +249,10 @@ const enabledOptionTags = computed(() => {
   if (c.downloadImages) tags.push(t('schedule.options.images'))
   if (c.downloadVideos) tags.push(t('schedule.options.videos'))
   if (c.notify) tags.push(t('schedule.options.notify'))
-  if (c.rewriteExifTime) tags.push(t('schedule.options.exif'))
+  if (c.synologyPhotos) tags.push(t('schedule.options.exif'))
   if (props.crontab.syncMode === 'CURSOR') tags.push(t('cronform.advanced.syncModeCursor'))
   else if (props.crontab.syncMode === 'TIMELINE') tags.push(t('cronform.advanced.syncModeTimeline'))
   if (c.skipExistingFile) tags.push(t('schedule.options.skipExisting'))
-  if (c.rewriteFileSystemTime) tags.push(t('schedule.options.rewriteFsTime'))
   if (c.checkSha1) tags.push(t('schedule.options.sha1'))
   return tags
 })
@@ -262,20 +261,6 @@ const moreMenu = ref<InstanceType<typeof Menu> | null>(null)
 const moreMenuOpen = ref(false)
 const moreMenuItems = computed(() => {
   const items: Array<{ label: string; icon: string; command: () => void }> = []
-  if (props.crontab.config?.rewriteExifTime) {
-    items.push({
-      label: t('schedule.row.menu.fillExif'),
-      icon: 'pi pi-clock',
-      command: () => emit('executeExif'),
-    })
-  }
-  if (props.crontab.config?.rewriteFileSystemTime) {
-    items.push({
-      label: t('schedule.row.menu.rewriteFsTime'),
-      icon: 'pi pi-history',
-      command: () => emit('executeRewriteFsTime'),
-    })
-  }
   items.push({
     label: t('schedule.row.menu.clearHistory'),
     icon: 'pi pi-trash',
@@ -741,7 +726,7 @@ onUnmounted(() => {
               </div>
 
               <div
-                v-if="currentStats.exifFilledCount !== undefined && crontab.config?.rewriteExifTime"
+                v-if="currentStats.exifFilledCount !== undefined && crontab.config?.synologyPhotos"
                 class="text-[13px]"
               >
                 <div class="mb-1 flex items-center justify-between">
@@ -759,32 +744,6 @@ onUnmounted(() => {
                   <div
                     class="h-1 rounded-full bg-amber-500 transition-all duration-500"
                     :style="{ width: getPercent(currentStats.exifFilledCount) + '%' }"
-                  />
-                </div>
-              </div>
-
-              <div
-                v-if="
-                  currentStats.fsTimeUpdatedCount !== undefined &&
-                  crontab.config?.rewriteFileSystemTime
-                "
-                class="text-[13px]"
-              >
-                <div class="mb-1 flex items-center justify-between">
-                  <span class="text-slate-500 dark:text-slate-400">{{
-                    t('schedule.row.fsTimeProgress')
-                  }}</span>
-                  <span class="font-mono text-slate-700 dark:text-slate-200">{{
-                    currentStats.fsTimeUpdatedCount
-                  }}</span>
-                </div>
-                <div
-                  v-if="currentStats.assetCount"
-                  class="h-1 w-full rounded-full bg-blue-200 dark:bg-blue-900"
-                >
-                  <div
-                    class="h-1 rounded-full bg-emerald-500 transition-all duration-500"
-                    :style="{ width: getPercent(currentStats.fsTimeUpdatedCount) + '%' }"
                   />
                 </div>
               </div>

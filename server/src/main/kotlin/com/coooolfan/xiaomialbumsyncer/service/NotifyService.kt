@@ -24,7 +24,7 @@ class NotifyService(private val sql: KSqlClient) {
     private val log = LoggerFactory.getLogger(NotifyService::class.java)
     private val tokenRegex = Regex("""\$\{([^}]+)}""")
 
-    fun send(crontab: Crontab, success: Int, total: Int) {
+    fun send(crontab: Crontab, success: Int, total: Int, status: String = if (success == total) "SUCCESS" else "PARTIAL") {
         val notifyConfig = sql.findOneById(SystemConfig::class, CONFIG_ID).notifyConfig
         val url = notifyConfig.url.trim()
 
@@ -38,11 +38,48 @@ class NotifyService(private val sql: KSqlClient) {
                 "crontab.name" to crontab.name,
                 "crontab.id" to crontab.id.toString(),
                 "success" to success.toString(),
-                "total" to total.toString()
+                "total" to total.toString(),
+                "status" to status,
+                "error" to "",
+                "history.id" to "",
             )
         )
 
         sendRequest(url, renderedBody, notifyConfig.headers, "crontabId=${crontab.id}, success=$success/$total")
+    }
+
+    /** Sends the same task webhook when the pipeline aborts before normal completion. */
+    fun sendFailure(crontab: Crontab, history: CrontabHistory, failure: Throwable) {
+        val notifyConfig = sql.findOneById(SystemConfig::class, CONFIG_ID).notifyConfig
+        val url = notifyConfig.url.trim()
+        if (url.isEmpty()) {
+            log.warn("通知 URL 未配置, 将跳过失败通知发送")
+            return
+        }
+
+        val total = sql.createQuery(CrontabHistoryDetail::class) {
+            where(table.crontabHistoryId eq history.id)
+            select(count(table))
+        }.execute().firstOrNull() ?: 0L
+        val completed = sql.createQuery(CrontabHistoryDetail::class) {
+            where(table.crontabHistoryId eq history.id)
+            where(table.downloadCompleted eq true)
+            select(count(table))
+        }.execute().firstOrNull() ?: 0L
+        val message = failure.message?.replace(Regex("\\s+"), " ")?.take(500).orEmpty()
+        val renderedBody = renderTemplate(
+            notifyConfig.body,
+            mapOf(
+                "crontab.name" to crontab.name,
+                "crontab.id" to crontab.id.toString(),
+                "history.id" to history.id.toString(),
+                "success" to completed.toString(),
+                "total" to total.toString(),
+                "status" to "FAILED",
+                "error" to message,
+            )
+        )
+        sendRequest(url, renderedBody, notifyConfig.headers, "crontabId=${crontab.id}, historyId=${history.id}, failed")
     }
 
     fun sendDailySummary() {

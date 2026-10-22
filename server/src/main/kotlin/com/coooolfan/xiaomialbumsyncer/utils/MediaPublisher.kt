@@ -72,9 +72,7 @@ class MediaPublisher(private val root: Path) {
         // Existence alone is never sufficient. Check final bytes on every run, even for completed history.
         if (config.skipExistingFile && previous?.complete == true && previous.fingerprint == fingerprint &&
             previous.outputs.size == details.size && previous.outputs.all {
-                matches(Path.of(it.path), it.outputSha256) &&
-                    (!config.rewriteFileSystemTime || Files.getLastModifiedTime(Path.of(it.path)).toInstant() ==
-                        details.first { detail -> detail.filePath == it.path }.asset.dateTaken)
+                matches(Path.of(it.path), it.outputSha256)
             }) {
             beforeCommit()
             val reused = previous.copy(outputs = previous.outputs.map { it.copy(archive = "") })
@@ -123,10 +121,7 @@ class MediaPublisher(private val root: Path) {
                     try {
                         Files.copy(copy, sibling, REPLACE_EXISTING)
                         require(matches(sibling, output.outputSha256)) { "发布副本 SHA-256 不匹配" }
-                        // Preserve requested filesystem timestamps on the exported file.
-                        if (config.rewriteFileSystemTime) {
-                            rewriteFSTime(sibling, details.first { it.filePath == output.path }.asset.dateTaken)
-                        } else Files.setLastModifiedTime(sibling, Files.getLastModifiedTime(copy))
+                        Files.setLastModifiedTime(sibling, Files.getLastModifiedTime(copy))
                         atomicMove(sibling, target)
                     } finally { Files.deleteIfExists(sibling) }
                 }

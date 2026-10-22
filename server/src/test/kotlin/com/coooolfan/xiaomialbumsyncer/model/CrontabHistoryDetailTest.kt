@@ -741,8 +741,8 @@ class CrontabHistoryDetailTest {
     }
 
     @Test
-    fun initSetsExifFilledBasedOnConfig() {
-        val config = buildConfig(targetPath = "/base", rewriteExifTime = true)
+    fun initSetsExifFilledBasedOnPhotosAdaptation() {
+        val config = buildConfig(targetPath = "/base", synologyPhotos = true)
         val history = buildHistory(config, Instant.parse("2024-05-06T12:00:00Z"))
         val album = buildAlbum("Photos")
         val asset = buildAsset(AssetType.IMAGE, "photo.jpg", album)
@@ -753,8 +753,8 @@ class CrontabHistoryDetailTest {
     }
 
     @Test
-    fun initSetsExifFilledToTrueWhenNotRequired() {
-        val config = buildConfig(targetPath = "/base", rewriteExifTime = false)
+    fun initSetsExifFilledToTrueWhenPhotosAdaptationIsDisabled() {
+        val config = buildConfig(targetPath = "/base", synologyPhotos = false)
         val history = buildHistory(config, Instant.parse("2024-05-06T12:00:00Z"))
         val album = buildAlbum("Photos")
         val asset = buildAsset(AssetType.IMAGE, "photo.jpg", album)
@@ -765,7 +765,7 @@ class CrontabHistoryDetailTest {
     }
 
     @Test
-    fun initSetsFsTimeUpdatedBasedOnConfig() {
+    fun initMarksLegacyFsTimeFieldComplete() {
         val config = buildConfig(targetPath = "/base", rewriteFileSystemTime = true)
         val history = buildHistory(config, Instant.parse("2024-05-06T12:00:00Z"))
         val album = buildAlbum("Photos")
@@ -773,11 +773,11 @@ class CrontabHistoryDetailTest {
 
         val detail = CrontabHistoryDetail.init(history, asset)
 
-        assertEquals(false, detail.fsTimeUpdated)
+        assertEquals(true, detail.fsTimeUpdated)
     }
 
     @Test
-    fun initSetsFsTimeUpdatedToTrueWhenNotRequired() {
+    fun initMarksLegacyFsTimeFieldCompleteWhenDisabled() {
         val config = buildConfig(targetPath = "/base", rewriteFileSystemTime = false)
         val history = buildHistory(config, Instant.parse("2024-05-06T12:00:00Z"))
         val album = buildAlbum("Photos")
@@ -794,6 +794,7 @@ class CrontabHistoryDetailTest {
         checkSha1: Boolean = false,
         rewriteExifTime: Boolean = false,
         rewriteFileSystemTime: Boolean = false,
+        synologyPhotos: Boolean = false,
     ): CrontabConfig {
         return CrontabConfig(
             expression = "0 0 * * * ?",
@@ -811,6 +812,7 @@ class CrontabHistoryDetailTest {
             verifiers = 1,
             exifProcessors = 1,
             fileTimeWorkers = 1,
+            synologyPhotos = synologyPhotos,
         )
     }
 

@@ -556,36 +556,11 @@ watch(
                   <div
                     class="flex items-center gap-2 text-[13px] text-slate-600 dark:text-slate-300"
                   >
-                    <ToggleSwitch
-                      v-model="form.config.rewriteExifTime"
-                      :disabled="!form.config.synologyPhotos"
-                    />
-                    <span>{{ t('cronform.advanced.rewriteExifTime') }}</span>
-                  </div>
-                  <div class="text-[13px] text-slate-500 dark:text-slate-400">
-                    {{ t('cronform.advanced.rewriteExifTimeHint') }}
-                  </div>
-                </div>
-                <div class="space-y-1">
-                  <div
-                    class="flex items-center gap-2 text-[13px] text-slate-600 dark:text-slate-300"
-                  >
                     <ToggleSwitch v-model="form.config.skipExistingFile" />
                     <span>{{ t('cronform.advanced.skipExistingFile') }}</span>
                   </div>
                   <div class="text-[13px] text-slate-500 dark:text-slate-400">
                     {{ t('cronform.advanced.skipExistingFileHint') }}
-                  </div>
-                </div>
-                <div class="space-y-1">
-                  <div
-                    class="flex items-center gap-2 text-[13px] text-slate-600 dark:text-slate-300"
-                  >
-                    <ToggleSwitch v-model="form.config.rewriteFileSystemTime" />
-                    <span>{{ t('cronform.advanced.rewriteFileSystemTime') }}</span>
-                  </div>
-                  <div class="text-[13px] text-slate-500 dark:text-slate-400">
-                    {{ t('cronform.advanced.rewriteFileSystemTimeHint') }}
                   </div>
                 </div>
                 <div class="space-y-1">
@@ -601,10 +576,7 @@ watch(
                 </div>
               </div>
 
-              <div
-                v-if="form.config.synologyPhotos && form.config.rewriteExifTime"
-                class="space-y-2 mt-3"
-              >
+              <div v-if="form.config.synologyPhotos" class="space-y-2 mt-3">
                 <label class="block text-[13px] font-medium text-slate-500 dark:text-slate-400">{{
                   t('cronform.advanced.exifTimeZone')
                 }}</label>
@@ -678,32 +650,6 @@ watch(
                     </InputNumber>
                     <div class="text-[13px] text-slate-500 dark:text-slate-400">
                       {{ t('cronform.concurrency.downloadersHint') }}
-                    </div>
-                  </div>
-
-                  <div class="space-y-2">
-                    <label
-                      class="block text-[13px] font-medium text-slate-500 dark:text-slate-400"
-                      >{{ t('cronform.concurrency.fileTimeWorkers') }}</label
-                    >
-                    <InputNumber
-                      v-model="form.config.fileTimeWorkers"
-                      :min="1"
-                      :max="50"
-                      showButtons
-                      buttonLayout="horizontal"
-                      inputClass="w-12 text-center"
-                      class="w-full"
-                    >
-                      <template>
-                        <span class="pi pi-plus" />
-                      </template>
-                      <template>
-                        <span class="pi pi-minus" />
-                      </template>
-                    </InputNumber>
-                    <div class="text-[13px] text-slate-500 dark:text-slate-400">
-                      {{ t('cronform.concurrency.fileTimeWorkersHint') }}
                     </div>
                   </div>
 

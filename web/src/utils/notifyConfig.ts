@@ -85,7 +85,7 @@ export function rowsToHeaderMap(rows: ReadonlyArray<HeaderRow>): Record<string, 
 }
 
 export function buildPresetBodyTemplate(): string {
-  return '{"text":"Xiaomi Album Syncer","desp":"定时任务 ${crontab.name} 已完成同步，成功 ${success}/${total}"}'
+  return '{"text":"Xiaomi Album Syncer","desp":"定时任务 ${crontab.name} 状态：${status}，处理 ${success}/${total}${error}"}'
 }
 
 export function buildPresetDailySummaryBodyTemplate(): string {

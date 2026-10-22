@@ -364,7 +364,7 @@ class MediaPublisherTest {
         assertArrayEquals(changed, Files.readAllBytes(Path.of(original.filePath)))
     }
 
-    @Test fun finalFilesystemTimeIsAppliedAndAlteredTimeTriggersRepair() {
+    @Test fun alteredFilesystemTimeDoesNotInvalidateAValidExport() {
         val base = detail()
         val timed = CrontabHistoryDetail(base) {
             crontabHistory = CrontabHistory(base.crontabHistory) {
@@ -379,8 +379,8 @@ class MediaPublisherTest {
         publish(listOf(timed), download = { asset, path -> Files.write(path, if (asset.type == AssetType.VIDEO) mov else jpeg); true }, transform = { item, copy ->
             transforms++; rewriteFSTime(copy, item.asset.dateTaken)
         })
-        assertEquals(1, transforms)
-        assertEquals(Instant.EPOCH, Files.getLastModifiedTime(path).toInstant())
+        assertEquals(0, transforms)
+        assertEquals(false, Files.getLastModifiedTime(path).toInstant() == Instant.EPOCH)
     }
 
     @Test fun disablingSkipExistingForcesNewTemporaryDownloadAndProcessing() {

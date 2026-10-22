@@ -434,19 +434,17 @@ const messages: typeof zh = {
         'Read changes from the previous sync cursor with resume support. The first sync or an invalid cursor builds a full baseline.',
       rewriteExifTime: 'Fill EXIF time',
       rewriteExifTimeHint:
-        'With Synology Photos compatibility on, fills the cloud capture time only when EXIF time is missing.',
+        'Included in Synology Photos compatibility: enabling it writes the cloud capture time into EXIF automatically.',
       skipExistingFile: 'Skip existing files',
       skipExistingFileHint:
         'Skips the download if the target file already exists. Only applies when the save path already contains data.',
       rewriteFileSystemTime: 'Rewrite file time',
-      rewriteFileSystemTimeHint:
-        'Sets the file system time to the asset time recorded in the cloud.',
+      rewriteFileSystemTimeHint: 'File system time is no longer a sync setting.',
       checkSha1: 'Verify files',
       checkSha1Hint:
         'Xiaomi compares source SHA-1. iCloud checks size and supported containers and records local SHA-256; this does not compare an Apple source digest. Failures retry next run.',
       exifTimeZone: 'EXIF time zone',
-      exifTimeZoneHint:
-        'Time zone used when writing EXIF; only applies when "Fill EXIF time" is enabled.',
+      exifTimeZoneHint: 'Time zone used when Synology Photos compatibility writes EXIF.',
     },
     concurrency: {
       title: 'Concurrency & performance',
@@ -688,6 +686,9 @@ const messages: typeof zh = {
       crontabId: 'Scheduled task ID',
       success: 'Successful items in this sync',
       total: 'Total items in this sync',
+      status: 'Task status (success, failed, or partial)',
+      error: 'Task failure summary',
+      historyId: 'Execution history ID',
       summary: 'Summary text of all tasks over the past 24h',
       date: 'Report date (yyyy-MM-dd)',
       accountNickname: 'Account nickname',
