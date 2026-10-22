@@ -157,7 +157,7 @@ class VerificationStageTest {
                 description = ""
                 enabled = false
                 syncMode = CrontabSyncMode.FULL
-                config = CrontabConfig("0 0 * * * ?", "UTC", directory.toString(), true, true, false, null, checkSha1 = true)
+                config = CrontabConfig("0 0 * * * ?", "UTC", directory.toString(), true, true, false, checkSha1 = true)
             }, SaveMode.INSERT_ONLY).execute().modifiedEntity
             val history = sql.saveCommand(CrontabHistory {
                 crontabId = crontab.id

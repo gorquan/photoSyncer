@@ -30,12 +30,9 @@ class ExifProcessingStage(
         }
 
         if (context.crontabHistory.crontab.config.synologyPhotos) {
-            val rewriteExifTimeZone = context.crontabHistory.crontab.config.rewriteExifTimeZone
-                ?: context.crontabHistory.crontab.config.timeZone
-
             val config = ExifRewriteConfig(
                 Path(systemConfig.exifToolPath),
-                rewriteExifTimeZone.toTimeZone()
+                context.crontabHistory.crontab.config.timeZone.toTimeZone()
             )
 
             log.info("开始处理资产 {} 的 EXIF 时间", context.asset.id)

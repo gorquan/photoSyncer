@@ -31,7 +31,7 @@ class MediaPublisherTest {
             size = if (role == "resOriginalVidCompl") mov.size.toLong() else jpeg.size.toLong()
             dateTaken = Instant.EPOCH; motionPhotoHint = false
         }
-        val task = Crontab { id = 1; accountId = 1; name = "test"; config = CrontabConfig("0 0 * * * ?", "UTC", directory.resolve("out").toString(), true, false, false, null, checkSha1 = checked, synologyPhotos = true) }
+        val task = Crontab { id = 1; accountId = 1; name = "test"; config = CrontabConfig("0 0 * * * ?", "UTC", directory.resolve("out").toString(), true, false, false, checkSha1 = checked, synologyPhotos = true) }
         val history = CrontabHistory { id = 1; crontab = task; startTime = Instant.EPOCH }
         return CrontabHistoryDetail(CrontabHistoryDetail.init(history, asset)) { id = asset.id; filePath = directory.resolve("out/photo.$extension").toString() }
     }
@@ -362,25 +362,6 @@ class MediaPublisherTest {
             publish(listOf(detail(version = "v2", extension = "jpeg")), "v2")
         }
         assertArrayEquals(changed, Files.readAllBytes(Path.of(original.filePath)))
-    }
-
-    @Test fun alteredFilesystemTimeDoesNotInvalidateAValidExport() {
-        val base = detail()
-        val timed = CrontabHistoryDetail(base) {
-            crontabHistory = CrontabHistory(base.crontabHistory) {
-                crontab = Crontab(base.crontabHistory.crontab) { config = base.crontabHistory.crontab.config.copy(rewriteFileSystemTime = true) }
-            }
-        }
-        publish(listOf(timed), transform = { item, copy -> rewriteFSTime(copy, item.asset.dateTaken) })
-        val path = Path.of(timed.filePath)
-        assertEquals(Instant.EPOCH, Files.getLastModifiedTime(path).toInstant())
-        Files.setLastModifiedTime(path, java.nio.file.attribute.FileTime.from(Instant.now()))
-        var transforms = 0
-        publish(listOf(timed), download = { asset, path -> Files.write(path, if (asset.type == AssetType.VIDEO) mov else jpeg); true }, transform = { item, copy ->
-            transforms++; rewriteFSTime(copy, item.asset.dateTaken)
-        })
-        assertEquals(0, transforms)
-        assertEquals(false, Files.getLastModifiedTime(path).toInstant() == Instant.EPOCH)
     }
 
     @Test fun disablingSkipExistingForcesNewTemporaryDownloadAndProcessing() {

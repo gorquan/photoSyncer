@@ -114,7 +114,7 @@ class ICloudMirrorInventoryTest {
             clients[account.id] = client
             val album = sql.saveCommand(Album { accountId = account.id; remoteKey = ICloudAlbumKey("PrimarySync", "__all__").encode(); name = "all"; shadow = false; assetCount = null; lastUpdateTime = null }, SaveMode.INSERT_ONLY).execute().modifiedEntity
             val row = sql.saveCommand(Crontab { name = "test"; description = ""; enabled = false; accountId = account.id; syncMode = CrontabSyncMode.FULL
-                config = CrontabConfig("0 0 * * * ?", "UTC", directory.resolve("out").toString(), true, true, false, null, synologyPhotos = true, syncCloudDeletes = true)
+                config = CrontabConfig("0 0 * * * ?", "UTC", directory.resolve("out").toString(), true, true, false, synologyPhotos = true, syncCloudDeletes = true)
             }, SaveMode.INSERT_ONLY).execute().modifiedEntity
             val task = Crontab(row) { albumIds = listOf(album.id) }
             action(sql, AssetService(sql, xiaomi, media, photos), CloudDeletionService(sql, media), task, requests, remote)

@@ -126,20 +126,14 @@ const {
   updatingRow,
   deleteDialog,
   executeDialog,
-  executeExifDialog,
-  executeRewriteFsDialog,
   clearHistoryDialog,
   requestDelete,
   requestExecute,
-  requestExecuteExif,
-  requestExecuteRewriteFs,
   requestClearHistory,
   submitCron,
   toggleEnabled,
   confirmDelete,
   confirmExecute,
-  confirmExecuteExif,
-  confirmExecuteRewriteFs,
   confirmClearHistory,
 } = useCronActions({
   crontabsStore,
@@ -154,18 +148,11 @@ const {
 
 const { visible: showDeleteVisible, loading: deleting } = deleteDialog
 const { visible: showExecuteVisible, loading: executing } = executeDialog
-const { visible: showExecuteExifVisible, loading: executingExif } = executeExifDialog
-const { visible: showExecuteRewriteFsVisible, loading: executingRewriteFs } = executeRewriteFsDialog
 const { visible: showClearHistoryVisible, loading: clearingHistory } = clearHistoryDialog
 
 const showHistoryDetailsDialog = ref(false)
 const anyExecDialogVisible = computed(
-  () =>
-    showDeleteVisible.value ||
-    showExecuteVisible.value ||
-    showExecuteExifVisible.value ||
-    showExecuteRewriteFsVisible.value ||
-    showClearHistoryVisible.value,
+  () => showDeleteVisible.value || showExecuteVisible.value || showClearHistoryVisible.value,
 )
 const selectedHistory = ref<CrontabHistory | null>(null)
 const historyDetailRows = ref<ReadonlyArray<CrontabHistoryDetail>>([])
@@ -342,8 +329,6 @@ watch(showHistoryDetailsDialog, (visible) => {
         @delete="requestDelete"
         @toggle="toggleEnabled"
         @execute="requestExecute"
-        @execute-exif="requestExecuteExif"
-        @execute-rewrite-fs-time="requestExecuteRewriteFs"
         @clear-history="requestClearHistory"
         @view-history-details="openHistoryDetails"
       />
@@ -378,23 +363,15 @@ watch(showHistoryDetailsDialog, (visible) => {
       v-if="anyExecDialogVisible"
       v-model:delete-visible="showDeleteVisible"
       v-model:execute-visible="showExecuteVisible"
-      v-model:execute-exif-visible="showExecuteExifVisible"
-      v-model:execute-rewrite-fs-visible="showExecuteRewriteFsVisible"
       v-model:clear-history-visible="showClearHistoryVisible"
       :deleting="deleting"
       :executing="executing"
-      :executing-exif="executingExif"
-      :executing-rewrite-fs="executingRewriteFs"
       :clearing-history="clearingHistory"
       @close-delete="deleteDialog.close()"
       @close-execute="executeDialog.close()"
-      @close-execute-exif="executeExifDialog.close()"
-      @close-execute-rewrite-fs="executeRewriteFsDialog.close()"
       @close-clear-history="clearHistoryDialog.close()"
       @confirm-delete="confirmDelete"
       @confirm-execute="confirmExecute"
-      @confirm-execute-exif="confirmExecuteExif"
-      @confirm-execute-rewrite-fs="confirmExecuteRewriteFs"
       @confirm-clear-history="confirmClearHistory"
     />
 

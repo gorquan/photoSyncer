@@ -56,14 +56,6 @@ export const useCrontabsStore = defineStore('crontabs', () => {
     return api.crontabController.executeCrontab({ crontabId })
   }
 
-  async function executeCrontabExifTime(crontabId: number) {
-    return api.crontabController.executeCrontabExifTime({ crontabId })
-  }
-
-  async function executeCrontabRewriteFileSystemTime(crontabId: number) {
-    return api.crontabController.executeCrontabRewriteFileSystemTime({ crontabId })
-  }
-
   async function clearCrontabHistory(crontabId: number) {
     await api.crontabController.clearCrontabHistory({ crontabId })
   }
@@ -85,8 +77,6 @@ export const useCrontabsStore = defineStore('crontabs', () => {
     updateCrontab,
     deleteCrontab,
     executeCrontab,
-    executeCrontabExifTime,
-    executeCrontabRewriteFileSystemTime,
     clearCrontabHistory,
     reset,
   }

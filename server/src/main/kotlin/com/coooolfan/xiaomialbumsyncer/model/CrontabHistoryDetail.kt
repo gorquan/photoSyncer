@@ -77,7 +77,6 @@ interface CrontabHistoryDetail {
                 this.localSha256 = null
                 this.verifiedSize = null
                 this.exifFilled = !history.crontab.config.synologyPhotos
-                // Legacy field retained for old history rows; filesystem time rewriting was removed.
                 this.fsTimeUpdated = true
             }
         }

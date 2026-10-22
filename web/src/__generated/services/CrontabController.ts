@@ -91,44 +91,6 @@ export class CrontabController {
     }
     
     /**
-     * 立即执行指定定时任务的EXIF填充操作
-     * 
-     * 此接口用于立即执行指定定时任务中的EXIF填充操作
-     * 需要用户登录认证才能访问（类级别注解）
-     * 
-     * @parameter {CrontabControllerOptions['executeCrontabExifTime']} options
-     * - crontabId 定时任务ID，用于指定要执行EXIF填充操作的任务
-     * 
-     */
-    readonly executeCrontabExifTime: (options: CrontabControllerOptions['executeCrontabExifTime']) => Promise<
-        void
-    > = async(options) => {
-        let _uri = '/api/crontab/';
-        _uri += encodeURIComponent(options.crontabId);
-        _uri += '/fill-exif/executions';
-        return (await this.executor({uri: _uri, method: 'POST'})) as Promise<void>;
-    }
-    
-    /**
-     * 立即执行指定定时任务的文件系统时间重写操作
-     * 
-     * 此接口用于立即执行指定定时任务中的文件系统时间重写操作
-     * 需要用户登录认证才能访问（类级别注解）
-     * 
-     * @parameter {CrontabControllerOptions['executeCrontabRewriteFileSystemTime']} options
-     * - crontabId 定时任务ID，用于指定要执行文件系统时间重写操作的任务
-     * 
-     */
-    readonly executeCrontabRewriteFileSystemTime: (options: CrontabControllerOptions['executeCrontabRewriteFileSystemTime']) => Promise<
-        void
-    > = async(options) => {
-        let _uri = '/api/crontab/';
-        _uri += encodeURIComponent(options.crontabId);
-        _uri += '/rewrite-fs-time/executions';
-        return (await this.executor({uri: _uri, method: 'POST'})) as Promise<void>;
-    }
-    
-    /**
      * 获取指定定时任务的当前统计信息
      * 
      * 此接口用于获取指定定时任务的当前执行统计信息，包括资源数量、下载完成数等
@@ -292,20 +254,6 @@ export type CrontabControllerOptions = {
     'getCrontabCurrentStats': {
         /**
          * 定时任务ID，用于指定要获取统计信息的任务
-         */
-        readonly crontabId: number
-    }, 
-    'executeCrontabExifTime': {
-        /**
-         * 定时任务ID，用于指定要执行EXIF填充操作的任务
-         * 
-         */
-        readonly crontabId: number
-    }, 
-    'executeCrontabRewriteFileSystemTime': {
-        /**
-         * 定时任务ID，用于指定要执行文件系统时间重写操作的任务
-         * 
          */
         readonly crontabId: number
     }, 

@@ -79,10 +79,9 @@ class ApiMemoryBenchmarkSuite {
         private val fetchFromDbSize = intProperty("xiaomi.benchmark.fetchFromDbSize", 2)
         private val verifiers = intProperty("xiaomi.benchmark.verifiers", 2)
         private val exifProcessors = intProperty("xiaomi.benchmark.exifProcessors", 2)
-        private val fileTimeWorkers = intProperty("xiaomi.benchmark.fileTimeWorkers", 2)
         private val incrementalCount = intProperty("xiaomi.benchmark.incrementalCount", 100)
         private val jfrEnabled = booleanProperty("xiaomi.benchmark.jfr", false)
-        private val rewriteExifTime = booleanProperty("xiaomi.benchmark.rewriteExifTime", false)
+        private val synologyPhotos = booleanProperty("xiaomi.benchmark.synologyPhotos", false)
         private val contentMode = stringProperty("xiaomi.benchmark.contentMode", "")
 
         fun execute() {
@@ -135,10 +134,9 @@ class ApiMemoryBenchmarkSuite {
                         "fetchFromDbSize" to fetchFromDbSize,
                         "verifiers" to verifiers,
                         "exifProcessors" to exifProcessors,
-                        "fileTimeWorkers" to fileTimeWorkers,
                         "incrementalCount" to incrementalCount,
                         "checkSha1" to false,
-                        "rewriteExifTime" to rewriteExifTime,
+                        "synologyPhotos" to synologyPhotos,
                         "contentMode" to contentMode,
                         "databaseProfile" to "production-default",
                         "jfrEnabled" to jfrEnabled,
@@ -191,16 +189,13 @@ class ApiMemoryBenchmarkSuite {
                 "targetPath" to workDir.resolve("downloads").toString(),
                 "downloadImages" to true,
                 "downloadVideos" to true,
-                "rewriteExifTime" to rewriteExifTime,
-                "rewriteExifTimeZone" to "UTC",
+                "synologyPhotos" to synologyPhotos,
                 "skipExistingFile" to true,
-                "rewriteFileSystemTime" to false,
                 "checkSha1" to false,
                 "fetchFromDbSize" to fetchFromDbSize,
                 "downloaders" to downloaders,
                 "verifiers" to verifiers,
                 "exifProcessors" to exifProcessors,
-                "fileTimeWorkers" to fileTimeWorkers,
                 "notify" to false,
             )
             val crontab = api.json(

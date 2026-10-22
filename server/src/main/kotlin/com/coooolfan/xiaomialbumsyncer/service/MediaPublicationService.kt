@@ -57,10 +57,9 @@ class MediaPublicationService(private val sql: KSqlClient, private val media: Cl
             val albumGroups = if (config.synologyPhotos) listOf(details) else details.groupBy { it.asset.album.id }.values.toList()
             val published = albumGroups.map { members ->
                 val group = "${task.id}/${identity.groupKey}" + if (config.synologyPhotos) "" else "/${members.first().asset.album.id}"
-                // Photos exports include the EXIF compatibility transform. Legacy receipts
-                // created by the old standalone EXIF switch are invalidated when returning
-                // to the cloud-original layout.
-                val processingVersion = if (!config.synologyPhotos && config.rewriteExifTime) "cloud-original" else MediaPublisher.VERSION
+                // The Photos switch is part of the task fingerprint, so changing it
+                // naturally invalidates the previous layout receipt.
+                val processingVersion = MediaPublisher.VERSION
                 val fingerprint = jacksonObjectMapper().writeValueAsString(listOf(processingVersion, config,
                     systemConfig.exifToolPath, members.map { listOf(it.asset.remoteKey, it.asset.checksum, it.asset.size,
                         it.asset.dateTaken.toString(), it.asset.mimeType, it.asset.motionPhotoHint, it.filePath) }))
@@ -125,7 +124,6 @@ class MediaPublicationService(private val sql: KSqlClient, private val media: Cl
 internal fun transformPublicationMedia(detail: CrontabHistoryDetail, path: Path, systemConfig: SystemConfig) {
     val config = detail.crontabHistory.crontab.config
     if (config.synologyPhotos) {
-        val zone = config.rewriteExifTimeZone ?: config.timeZone
-        rewriteExifTime(detail.asset, path, ExifRewriteConfig(Path.of(systemConfig.exifToolPath), zone.toTimeZone()))
+        rewriteExifTime(detail.asset, path, ExifRewriteConfig(Path.of(systemConfig.exifToolPath), config.timeZone.toTimeZone()))
     }
 }

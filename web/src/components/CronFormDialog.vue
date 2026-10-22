@@ -576,22 +576,6 @@ watch(
                 </div>
               </div>
 
-              <div v-if="form.config.synologyPhotos" class="space-y-2 mt-3">
-                <label class="block text-[13px] font-medium text-slate-500 dark:text-slate-400">{{
-                  t('cronform.advanced.exifTimeZone')
-                }}</label>
-                <Select
-                  v-model="form.config.rewriteExifTimeZone"
-                  :options="timeZones"
-                  placeholder="Asia/Shanghai"
-                  filter
-                  class="w-full"
-                />
-                <div class="text-[13px] text-slate-500 dark:text-slate-400">
-                  {{ t('cronform.advanced.exifTimeZoneHint') }}
-                </div>
-              </div>
-
               <Panel :header="t('cronform.concurrency.title')" toggleable collapsed class="mt-4">
                 <div class="text-[13px] text-slate-500 dark:text-slate-400 mb-4">
                   {{ t('cronform.concurrency.warning') }}

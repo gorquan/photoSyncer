@@ -17,12 +17,8 @@ import org.babyfish.jimmer.sql.kt.ast.query.baseTableSymbol
 import org.babyfish.jimmer.sql.kt.fetcher.newFetcher
 import org.noear.solon.annotation.Inject
 import org.noear.solon.annotation.Managed
-import org.slf4j.LoggerFactory
-import java.nio.file.Path
 import java.time.Instant
-import java.time.ZoneId
 import java.util.*
-import kotlin.io.path.Path
 
 @Managed
 class CrontabService(private val sql: KSqlClient) {
@@ -30,8 +26,6 @@ class CrontabService(private val sql: KSqlClient) {
     // 避免一下循环依赖
     @Inject
     private lateinit var taskScheduler: TaskScheduler
-
-    private val log = LoggerFactory.getLogger(this.javaClass)
 
     fun createCrontab(input: CrontabCreateInput, fetcher: Fetcher<Crontab>): Crontab {
         validateSyncConfig(input.accountId, input.syncMode, input.config)
@@ -276,45 +270,6 @@ class CrontabService(private val sql: KSqlClient) {
         }
     }
 
-    fun executeCrontabExifTime(crontabId: Long) {
-        val systemConfig = sql.findById(SystemConfig::class, 0)
-            ?: throw IllegalStateException("System is not initialized")
-
-        val crontab =
-            sql.findById(
-                CRONTAB_WITH_ALBUMS_FETCHER,
-                crontabId
-            ) ?: throw IllegalArgumentException("定时任务不存在: $crontabId")
-
-        if (!crontab.config.synologyPhotos) {
-            throw IllegalArgumentException("定时任务未启用群晖 Photos 适配: $crontabId")
-        }
-
-        var timeZone: TimeZone?
-        try {
-            timeZone = TimeZone.getTimeZone(ZoneId.of(crontab.config.rewriteExifTimeZone ?: crontab.config.timeZone))
-        } catch (e: Exception) {
-            log.error("解析时区失败，填充 EXIF 时间操作将被取消，时区字符串：${crontab.config.rewriteExifTimeZone ?: crontab.config.timeZone}")
-            throw IllegalArgumentException(
-                "解析时区失败，填充 EXIF 时间操作将被取消，时区字符串：${crontab.config.rewriteExifTimeZone ?: crontab.config.timeZone}",
-                e
-            )
-        }
-
-        if (timeZone == null) {
-            log.warn("未指定有效的时区，填充 EXIF 时间操作将被取消")
-            throw IllegalArgumentException("未指定有效的时区，填充 EXIF 时间操作将被取消")
-        }
-
-        val assetPathMap = fetchAssetPathMapBy(crontab.id)
-
-        taskScheduler.executeCrontabExifTime(true, assetPathMap, systemConfig, timeZone)
-    }
-
-    fun executeCrontabRewriteFileSystemTime(crontabId: Long) {
-        throw IllegalArgumentException("文件系统时间重写功能已移除: $crontabId")
-    }
-
     fun listCrontabHistoryDetails(
         historyId: Long,
         pageIndex: Int,
@@ -435,34 +390,5 @@ class CrontabService(private val sql: KSqlClient) {
             where(table.id eq detailId)
         }
     }
-
-    internal fun fetchAssetPathMapBy(crontabId: Long): Map<Asset, Path> {
-        val crontabHistoryDetails = sql.createQuery(CrontabHistoryDetail::class) {
-            where(table.crontabHistory.crontabId eq crontabId)
-            where(table.publicationStatus eq "PUBLISHED")
-            where(table.asset.currentVersion eq true)
-            // A reverted source can reactivate an old asset row before its new export
-            // succeeds. Only the latest successful owner of a path may patch it.
-            where(notExists(subQuery(CrontabHistoryDetail::class) {
-                where(table.crontabHistory.crontabId eq crontabId)
-                where(table.publicationStatus eq "PUBLISHED")
-                where(table.filePath eq parentTable.filePath)
-                where(table.id gt parentTable.id)
-                select(table)
-            }))
-            orderBy(table.id.asc())
-            select(table.fetchBy {
-                asset { allTableFields() }
-                filePath()
-            })
-        }.distinct().execute()
-
-        val assetPathMap = mutableMapOf<Asset, Path>()
-        crontabHistoryDetails.forEach { detail ->
-            assetPathMap[detail.asset] = Path(detail.filePath)
-        }
-        return assetPathMap
-    }
-
 
 }

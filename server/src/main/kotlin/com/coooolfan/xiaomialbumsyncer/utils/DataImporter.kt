@@ -94,8 +94,6 @@ class DataImporter(
                 targetPath = "./download",
                 downloadImages = true,
                 downloadVideos = true,
-                rewriteExifTime = true,
-                rewriteExifTimeZone = "Asia/Shanghai",
             )
             albumIds = selectedAlbums
         }

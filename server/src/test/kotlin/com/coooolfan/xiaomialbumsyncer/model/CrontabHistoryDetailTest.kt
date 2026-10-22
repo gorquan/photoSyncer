@@ -766,7 +766,7 @@ class CrontabHistoryDetailTest {
 
     @Test
     fun initMarksLegacyFsTimeFieldComplete() {
-        val config = buildConfig(targetPath = "/base", rewriteFileSystemTime = true)
+        val config = buildConfig(targetPath = "/base")
         val history = buildHistory(config, Instant.parse("2024-05-06T12:00:00Z"))
         val album = buildAlbum("Photos")
         val asset = buildAsset(AssetType.IMAGE, "photo.jpg", album)
@@ -778,7 +778,7 @@ class CrontabHistoryDetailTest {
 
     @Test
     fun initMarksLegacyFsTimeFieldCompleteWhenDisabled() {
-        val config = buildConfig(targetPath = "/base", rewriteFileSystemTime = false)
+        val config = buildConfig(targetPath = "/base")
         val history = buildHistory(config, Instant.parse("2024-05-06T12:00:00Z"))
         val album = buildAlbum("Photos")
         val asset = buildAsset(AssetType.IMAGE, "photo.jpg", album)
@@ -792,8 +792,6 @@ class CrontabHistoryDetailTest {
         targetPath: String,
         timeZone: String = "UTC",
         checkSha1: Boolean = false,
-        rewriteExifTime: Boolean = false,
-        rewriteFileSystemTime: Boolean = false,
         synologyPhotos: Boolean = false,
     ): CrontabConfig {
         return CrontabConfig(
@@ -802,16 +800,12 @@ class CrontabHistoryDetailTest {
             targetPath = targetPath,
             downloadImages = true,
             downloadVideos = true,
-            rewriteExifTime = rewriteExifTime,
-            rewriteExifTimeZone = null,
             skipExistingFile = true,
-            rewriteFileSystemTime = rewriteFileSystemTime,
             checkSha1 = checkSha1,
             fetchFromDbSize = 2,
             downloaders = 1,
             verifiers = 1,
             exifProcessors = 1,
-            fileTimeWorkers = 1,
             synologyPhotos = synologyPhotos,
         )
     }

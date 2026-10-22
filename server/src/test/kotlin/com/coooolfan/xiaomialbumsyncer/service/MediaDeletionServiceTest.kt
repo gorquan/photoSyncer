@@ -71,7 +71,7 @@ class MediaDeletionServiceTest {
                 crontabHistory = CrontabHistory(detail.crontabHistory) {
                     crontab = Crontab(detail.crontabHistory.crontab) {
                         config = detail.crontabHistory.crontab.config.copy(synologyPhotos = photos,
-                            rewriteExifTime = true, rewriteExifTimeZone = "UTC", rewriteFileSystemTime = true)
+                            synologyPhotos = true)
                     }
                 }
             }
@@ -209,7 +209,7 @@ class MediaDeletionServiceTest {
             val asset = Asset(row) { this.album = album }
             val task = sql.saveCommand(Crontab {
                 name = "test"; description = ""; enabled = false; syncMode = CrontabSyncMode.FULL; accountId = account.id
-                config = CrontabConfig("0 0 * * * ?", "UTC", directory.resolve("out").toString(), true, true, false, null, synologyPhotos = true, syncCloudDeletes = true)
+                config = CrontabConfig("0 0 * * * ?", "UTC", directory.resolve("out").toString(), true, true, false, synologyPhotos = true, syncCloudDeletes = true)
             }, SaveMode.INSERT_ONLY).execute().modifiedEntity
             val history = sql.saveCommand(CrontabHistory {
                 crontabId = task.id; startTime = Instant.EPOCH; endTime = null; fetchedAllAssets = true; syncCursors = null; timelineSnapshot = null

@@ -36,7 +36,7 @@ class MediaDeletionTest {
             size = if (role == "resOriginalVidCompl") mov.size.toLong() else jpeg.size.toLong()
             dateTaken = Instant.EPOCH; motionPhotoHint = false; cloudDeleted = false
         }
-        val job = Crontab { id = task; accountId = 1; name = "test"; config = CrontabConfig("0 0 * * * ?", "UTC", directory.resolve(out).toString(), true, true, false, null, synologyPhotos = true, syncCloudDeletes = true) }
+        val job = Crontab { id = task; accountId = 1; name = "test"; config = CrontabConfig("0 0 * * * ?", "UTC", directory.resolve(out).toString(), true, true, false, synologyPhotos = true, syncCloudDeletes = true) }
         val history = CrontabHistory { id = 1; crontab = job; startTime = Instant.EPOCH }
         return CrontabHistoryDetail(CrontabHistoryDetail.init(history, asset)) { id = asset.id }
     }
