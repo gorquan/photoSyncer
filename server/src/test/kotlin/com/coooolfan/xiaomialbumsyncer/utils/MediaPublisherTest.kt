@@ -228,6 +228,32 @@ class MediaPublisherTest {
         assertNoRetainedMedia()
     }
 
+    @Test fun photosCompatibilityCanBeToggledBackAndForthWithoutRedownloadingValidFiles() {
+        val inputs = listOf(detail(), detail("resOriginalVidCompl"))
+
+        // Ordinary layout -> Photos layout.
+        val ordinary = legacy(inputs)
+        val photos = migrate(inputs, listOf(ordinary))
+        assertEquals("DELETED", MediaDeletion(directory.resolve("archive")).retireAlbumLayouts(
+            1, MediaIdentity.of(inputs.first().asset).groupKey
+        ).status)
+
+        // Photos layout -> ordinary layout. Valid unchanged bytes are reused locally.
+        val restored = restore(inputs, photos)
+        assertEquals("DELETED", MediaDeletion(directory.resolve("archive")).retirePhotosLayouts(
+            1, MediaIdentity.of(inputs.first().asset).groupKey, listOf(restored)
+        ).status)
+
+        // Ordinary layout -> Photos layout again. The existing ordinary files are enough;
+        // a download would fail the test and would indicate that the toggle reset lost reuse.
+        val photosAgain = migrate(inputs, listOf(restored))
+        assertTrue(photosAgain.complete)
+        assertEquals("DELETED", MediaDeletion(directory.resolve("archive")).retireAlbumLayouts(
+            1, MediaIdentity.of(inputs.first().asset).groupKey
+        ).status)
+        assertNoRetainedMedia()
+    }
+
     @Test fun unavailableCloudOriginalWhileDisablingKeepsOnlyAvailablePhotosCopy() {
         val inputs = listOf(detail(), detail("resOriginalVidCompl"))
         val old = photos(inputs, transform = { item, path -> if (item.asset.type == AssetType.IMAGE)

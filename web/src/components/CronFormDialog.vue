@@ -211,10 +211,7 @@ watch(
   <Dialog
     v-model:visible="visibleProxy"
     modal
-    :class="[
-      'transition-all duration-300',
-      showCronHelp ? 'w-full sm:w-250' : 'w-full sm:w-130',
-    ]"
+    :class="['transition-all duration-300', showCronHelp ? 'w-full sm:w-250' : 'w-full sm:w-130']"
   >
     <template #header>
       <div class="flex items-center gap-3 min-w-0">
@@ -527,11 +524,7 @@ watch(
               <label class="block text-[13px] font-medium text-slate-500 dark:text-slate-400">{{
                 t('cronform.field.targetPath')
               }}</label>
-              <InputText
-                v-model="form.config.targetPath"
-                placeholder="/photos"
-                class="w-full"
-              />
+              <InputText v-model="form.config.targetPath" placeholder="/photos" class="w-full" />
               <div v-if="formErrors.targetPath" class="text-[13px] text-red-600">
                 {{ formErrors.targetPath }}
               </div>

@@ -21,7 +21,9 @@ export function targetRootPath(path: string): string {
   const trimmed = path.trim()
   if (!trimmed) return ''
   const expressionStart = trimmed.indexOf('${')
-  return trimTrailingSlash(expressionStart >= 0 ? trimmed.slice(0, expressionStart) : trimmed) || '/'
+  return (
+    trimTrailingSlash(expressionStart >= 0 ? trimmed.slice(0, expressionStart) : trimmed) || '/'
+  )
 }
 
 export function targetBasePath(path: string): string {
