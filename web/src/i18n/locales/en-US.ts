@@ -402,14 +402,14 @@ const messages: typeof zh = {
       synologyPhotos: 'Synology Photos compatibility',
       synologyPhotosEnableTitle: 'Enable Synology Photos compatibility',
       synologyPhotosEnableHint:
-        'After saving, the next sync adapts verified local originals, downloading only missing, corrupt or changed versions. It validates the new Photos files before removing obsolete layouts. Failures retain old files. Use a fixed target root.',
+        'The change takes effect on the next sync. Reuse verified local files first; valid existing Photos exports are skipped, and only missing, corrupt or changed resources are processed or downloaded. Validate new files before removing the old layout; failures retain old files.',
       synologyPhotosDisableTitle: 'Disable Synology Photos compatibility',
       synologyPhotosDisableHint:
-        'After saving, the next sync restores cloud originals in the ordinary layout before removing this plan’s Photos exports. Unchanged originals are reused locally; files changed by EXIF filling need a cloud download for exact restoration. Live Photo companion videos are cloud originals and remain. Unavailable cloud originals, externally modified files and files referenced by other plans are preserved and reported.',
+        'The change takes effect on the next sync. Restore cloud originals under the same account folder before removing this plan’s Photos exports. Unchanged files are reused; files changed by EXIF filling need a cloud download for exact restoration. If restoration fails, a file is externally modified or another task references it, the existing file is preserved and reported. If enabled again later, valid existing Photos exports are skipped.',
       synologyPhotosHint:
-        'On: use a fixed export root with provider, account and library folders. Apple Live Photo components share a basename; Xiaomi motion photos retain their original structure.',
+        'On: apply the Photos layout on the next sync under the shared provider, account and library folders. Apple Live Photo components share a basename; Xiaomi motion photos retain their original structure.',
       synologyPhotosOffHint:
-        'When disabled: preserve cloud-original bytes without EXIF filling; files stay under the same root and account folder using the regular album layout. HEIC / HEVC previews depend on the NAS and client.',
+        'When disabled: restore cloud-original bytes on the next sync without EXIF filling; files stay under the same root and account folder using the regular layout. HEIC / HEVC previews depend on the NAS and client.',
       notify: 'Send notifications',
       enabled: 'Scheduled trigger',
     },
