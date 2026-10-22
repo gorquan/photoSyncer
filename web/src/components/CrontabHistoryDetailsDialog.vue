@@ -332,16 +332,6 @@ const stepTagClass = '!whitespace-nowrap !text-[13px]'
             </template>
           </Column>
 
-          <Column :header="t('schedule.details.colFsTime')" style="width: 7rem">
-            <template #body="{ data }">
-              <Tag
-                :class="stepTagClass"
-                :severity="resolveStepStatus(data.fsTimeUpdated).severity"
-                :value="resolveStepStatus(data.fsTimeUpdated).label"
-              />
-            </template>
-          </Column>
-
           <Column :header="t('schedule.details.colMessage')" style="min-width: 16rem">
             <template #body="{ data }">
               <div class="text-sm text-slate-700 dark:text-slate-200 break-words">

@@ -76,8 +76,9 @@ interface CrontabHistoryDetail {
                 this.verificationStatus = if (history.crontab.config.checkSha1) VerificationStatus.PENDING else VerificationStatus.SKIPPED
                 this.localSha256 = null
                 this.verifiedSize = null
-                this.exifFilled = !history.crontab.config.rewriteExifTime
-                this.fsTimeUpdated = !history.crontab.config.rewriteFileSystemTime
+                this.exifFilled = !history.crontab.config.synologyPhotos
+                // Legacy field retained for old history rows; filesystem time rewriting was removed.
+                this.fsTimeUpdated = true
             }
         }
     }

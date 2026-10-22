@@ -57,8 +57,9 @@ class MediaPublicationService(private val sql: KSqlClient, private val media: Cl
             val albumGroups = if (config.synologyPhotos) listOf(details) else details.groupBy { it.asset.album.id }.values.toList()
             val published = albumGroups.map { members ->
                 val group = "${task.id}/${identity.groupKey}" + if (config.synologyPhotos) "" else "/${members.first().asset.album.id}"
-                // Existing Photos receipts keep their fingerprint; old non-Photos EXIF exports
-                // must be downloaded again once to restore the cloud-original bytes.
+                // Photos exports include the EXIF compatibility transform. Legacy receipts
+                // created by the old standalone EXIF switch are invalidated when returning
+                // to the cloud-original layout.
                 val processingVersion = if (!config.synologyPhotos && config.rewriteExifTime) "cloud-original" else MediaPublisher.VERSION
                 val fingerprint = jacksonObjectMapper().writeValueAsString(listOf(processingVersion, config,
                     systemConfig.exifToolPath, members.map { listOf(it.asset.remoteKey, it.asset.checksum, it.asset.size,
@@ -76,6 +77,8 @@ class MediaPublicationService(private val sql: KSqlClient, private val media: Cl
                             set(table.archivePath, output.archive.takeIf { it.isNotBlank() })
                             set(table.outputSha256, output.outputSha256)
                             set(table.exifFilled, true)
+                            // Kept as a legacy history field; filesystem timestamps are no
+                            // longer rewritten by the publication pipeline.
                             set(table.fsTimeUpdated, true)
                             set(table.message, if (output.motionStatus == MotionPhotoStatus.STATIC && !detail.asset.motionPhotoHint) null else output.diagnostic)
                             where(table.id eq detail.id)
@@ -118,12 +121,11 @@ class MediaPublicationService(private val sql: KSqlClient, private val media: Cl
     }
 }
 
-/** Photos compatibility may fill metadata; ordinary downloads keep cloud-original bytes. */
+/** Photos compatibility fills metadata; ordinary downloads keep cloud-original bytes. */
 internal fun transformPublicationMedia(detail: CrontabHistoryDetail, path: Path, systemConfig: SystemConfig) {
     val config = detail.crontabHistory.crontab.config
-    if (config.synologyPhotos && config.rewriteExifTime) {
-        val zone = requireNotNull(config.rewriteExifTimeZone) { "EXIF 时间填充缺少有效时区" }
+    if (config.synologyPhotos) {
+        val zone = config.rewriteExifTimeZone ?: config.timeZone
         rewriteExifTime(detail.asset, path, ExifRewriteConfig(Path.of(systemConfig.exifToolPath), zone.toTimeZone()))
     }
-    if (config.rewriteFileSystemTime) rewriteFSTime(path, detail.asset.dateTaken)
 }

@@ -80,7 +80,7 @@ class MediaDeletionServiceTest {
             assertEquals(photos, Files.exists(marker))
             if (photos) assertArrayEquals(jpeg + byteArrayOf('x'.code.toByte()), Files.readAllBytes(path))
             else assertArrayEquals(jpeg, Files.readAllBytes(path))
-            assertEquals(Instant.EPOCH, Files.getLastModifiedTime(path).toInstant())
+            assertTrue(Files.getLastModifiedTime(path).toInstant() != Instant.EPOCH)
         }
     }
 

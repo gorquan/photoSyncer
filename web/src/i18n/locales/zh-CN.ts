@@ -425,18 +425,17 @@ export default {
       syncModeCursorHint:
         '从上次同步位点读取变化记录，支持断点续拉；首次同步或位点失效时自动建立全量基线。',
       rewriteExifTime: '填充 EXIF 时间',
-      rewriteExifTimeHint:
-        '开启群晖适配后，将云端记录的资产时间写入 EXIF，仅在文件缺少 EXIF 时间时生效。',
+      rewriteExifTimeHint: '已并入群晖 Photos 适配：开启群晖适配时自动写入云端记录的资产时间。',
       skipExistingFile: '跳过已存在文件',
       skipExistingFileHint:
         '若资产的目标文件路径已存在，将跳过下载。仅适用于保存路径中已有存量数据。',
       rewriteFileSystemTime: '重写文件时间',
-      rewriteFileSystemTimeHint: '将文件系统时间修改为云端记录的资产时间。',
+      rewriteFileSystemTimeHint: '文件系统时间不再作为同步配置。',
       checkSha1: '校验文件',
       checkSha1Hint:
         '小米比对源 SHA-1；iCloud 检查大小和支持的容器结构，并记录本地 SHA-256（不代表与苹果源摘要比对）。失败后下一轮重试。',
       exifTimeZone: 'EXIF 时区',
-      exifTimeZoneHint: '用于写入 EXIF 的时区；仅在开启“填充 EXIF 时间”后生效。',
+      exifTimeZoneHint: '用于群晖 Photos 适配写入 EXIF 的时区。',
     },
     concurrency: {
       title: '并发与性能',
@@ -669,6 +668,9 @@ export default {
       crontabId: '计划任务 ID',
       success: '本次同步成功数量',
       total: '本次同步总数量',
+      status: '任务状态（成功、失败或部分完成）',
+      error: '任务失败摘要',
+      historyId: '执行历史 ID',
       summary: '过去 24h 所有任务的汇总文本',
       date: '报告日期（yyyy-MM-dd）',
       accountNickname: '账号昵称',

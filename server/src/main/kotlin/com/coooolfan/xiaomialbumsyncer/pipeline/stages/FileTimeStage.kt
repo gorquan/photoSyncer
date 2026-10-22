@@ -3,12 +3,10 @@ package com.coooolfan.xiaomialbumsyncer.pipeline.stages
 import com.coooolfan.xiaomialbumsyncer.model.CrontabHistoryDetail
 import com.coooolfan.xiaomialbumsyncer.model.fsTimeUpdated
 import com.coooolfan.xiaomialbumsyncer.model.id
-import com.coooolfan.xiaomialbumsyncer.utils.rewriteFSTime
 import org.babyfish.jimmer.sql.kt.KSqlClient
 import org.babyfish.jimmer.sql.kt.ast.expression.eq
 import org.noear.solon.annotation.Managed
 import org.slf4j.LoggerFactory
-import kotlin.io.path.Path
 
 /**
  * 文件时间处理阶段处理器
@@ -26,11 +24,8 @@ class FileTimeStage(
             return context
         }
 
-        if (context.crontabHistory.crontab.config.rewriteFileSystemTime) {
-            log.info("开始处理资产 {} 的文件系统时间", context.asset.id)
-            rewriteFSTime(Path(context.filePath), context.asset.dateTaken)
-            log.info("资产 {} 的文件系统时间处理完成", context.asset.id)
-        }
+        // Kept as a compatibility stage for old serialized pipeline state. The
+        // filesystem timestamp rewrite option was removed and is now a no-op.
 
         sql.executeUpdate(CrontabHistoryDetail::class) {
             set(table.fsTimeUpdated, true)

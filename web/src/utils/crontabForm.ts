@@ -56,7 +56,7 @@ export function createDefaultCronConfig(defaultTz: string): CrontabConfig {
     rewriteExifTime: false,
     rewriteExifTimeZone: defaultTz,
     skipExistingFile: true,
-    rewriteFileSystemTime: true,
+    rewriteFileSystemTime: false,
     checkSha1: true,
     fetchFromDbSize: 2,
     downloaders: 8,

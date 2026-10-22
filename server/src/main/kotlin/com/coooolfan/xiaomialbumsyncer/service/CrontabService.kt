@@ -286,17 +286,17 @@ class CrontabService(private val sql: KSqlClient) {
                 crontabId
             ) ?: throw IllegalArgumentException("定时任务不存在: $crontabId")
 
-        if (!crontab.config.rewriteExifTime) {
-            throw IllegalArgumentException("定时任务未启用重写Exif时间选项: $crontabId")
+        if (!crontab.config.synologyPhotos) {
+            throw IllegalArgumentException("定时任务未启用群晖 Photos 适配: $crontabId")
         }
 
         var timeZone: TimeZone?
         try {
-            timeZone = TimeZone.getTimeZone(ZoneId.of(crontab.config.rewriteExifTimeZone))
+            timeZone = TimeZone.getTimeZone(ZoneId.of(crontab.config.rewriteExifTimeZone ?: crontab.config.timeZone))
         } catch (e: Exception) {
-            log.error("解析时区失败，填充 EXIF 时间操作将被取消，时区字符串：${crontab.config.rewriteExifTimeZone}")
+            log.error("解析时区失败，填充 EXIF 时间操作将被取消，时区字符串：${crontab.config.rewriteExifTimeZone ?: crontab.config.timeZone}")
             throw IllegalArgumentException(
-                "解析时区失败，填充 EXIF 时间操作将被取消，时区字符串：${crontab.config.rewriteExifTimeZone}",
+                "解析时区失败，填充 EXIF 时间操作将被取消，时区字符串：${crontab.config.rewriteExifTimeZone ?: crontab.config.timeZone}",
                 e
             )
         }
@@ -312,19 +312,7 @@ class CrontabService(private val sql: KSqlClient) {
     }
 
     fun executeCrontabRewriteFileSystemTime(crontabId: Long) {
-        val crontab =
-            sql.findById(
-                CRONTAB_WITH_ALBUMS_FETCHER,
-                crontabId
-            ) ?: throw IllegalArgumentException("定时任务不存在: $crontabId")
-
-        if (!crontab.config.rewriteFileSystemTime) {
-            throw IllegalArgumentException("定时任务未启用重写文件系统时间选项: $crontabId")
-        }
-
-        val assetPathMap = fetchAssetPathMapBy(crontab.id)
-
-        taskScheduler.executeCrontabRewriteFileSystemTime(true, assetPathMap)
+        throw IllegalArgumentException("文件系统时间重写功能已移除: $crontabId")
     }
 
     fun listCrontabHistoryDetails(
