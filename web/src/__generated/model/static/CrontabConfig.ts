@@ -5,7 +5,6 @@ export interface CrontabConfig {
     readonly downloadImages: boolean;
     readonly downloadVideos: boolean;
     readonly skipExistingFile: boolean;
-    readonly checkSha1: boolean;
     readonly fetchFromDbSize: number;
     readonly downloaders: number;
     readonly verifiers: number;

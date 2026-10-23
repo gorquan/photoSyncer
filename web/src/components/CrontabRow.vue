@@ -251,7 +251,7 @@ const enabledOptionTags = computed(() => {
   if (props.crontab.syncMode === 'CURSOR') tags.push(t('cronform.advanced.syncModeCursor'))
   else if (props.crontab.syncMode === 'TIMELINE') tags.push(t('cronform.advanced.syncModeTimeline'))
   if (c.skipExistingFile) tags.push(t('schedule.options.skipExisting'))
-  if (c.checkSha1) tags.push(t('schedule.options.sha1'))
+  tags.push(t('schedule.options.sha1'))
   return tags
 })
 
@@ -700,10 +700,7 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <div
-                v-if="currentStats.sha1VerifiedCount !== undefined && crontab.config?.checkSha1"
-                class="text-[13px]"
-              >
+              <div v-if="currentStats.sha1VerifiedCount !== undefined" class="text-[13px]">
                 <div class="mb-1 flex items-center justify-between">
                   <span class="text-slate-500 dark:text-slate-400">{{
                     t('schedule.options.sha1')

@@ -415,9 +415,6 @@ export default {
       skipExistingFile: '跳过已存在文件',
       skipExistingFileHint:
         '若资产的目标文件路径已存在，将跳过下载。仅适用于保存路径中已有存量数据。',
-      checkSha1: '校验文件',
-      checkSha1Hint:
-        '小米比对源 SHA-1；iCloud 检查大小和支持的容器结构，并记录本地 SHA-256（不代表与苹果源摘要比对）。失败后下一轮重试。',
     },
     concurrency: {
       title: '并发与性能',

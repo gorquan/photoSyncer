@@ -715,8 +715,8 @@ class CrontabHistoryDetailTest {
     }
 
     @Test
-    fun initSetsSha1VerifiedBasedOnConfig() {
-        val config = buildConfig(targetPath = "/base", checkSha1 = true)
+    fun initAlwaysStartsFileVerificationPending() {
+        val config = buildConfig(targetPath = "/base")
         val history = buildHistory(config, Instant.parse("2024-05-06T12:00:00Z"))
         val album = buildAlbum("Photos")
         val asset = buildAsset(AssetType.IMAGE, "photo.jpg", album)
@@ -728,16 +728,16 @@ class CrontabHistoryDetailTest {
     }
 
     @Test
-    fun initSetsSha1VerifiedToTrueWhenNotRequired() {
-        val config = buildConfig(targetPath = "/base", checkSha1 = false)
+    fun initNeverSkipsFileVerification() {
+        val config = buildConfig(targetPath = "/base")
         val history = buildHistory(config, Instant.parse("2024-05-06T12:00:00Z"))
         val album = buildAlbum("Photos")
         val asset = buildAsset(AssetType.IMAGE, "photo.jpg", album)
 
         val detail = CrontabHistoryDetail.init(history, asset)
 
-        assertEquals(true, detail.sha1Verified)
-        assertEquals(VerificationStatus.SKIPPED, detail.verificationStatus)
+        assertEquals(false, detail.sha1Verified)
+        assertEquals(VerificationStatus.PENDING, detail.verificationStatus)
     }
 
     @Test
@@ -791,7 +791,6 @@ class CrontabHistoryDetailTest {
     private fun buildConfig(
         targetPath: String,
         timeZone: String = "UTC",
-        checkSha1: Boolean = false,
         synologyPhotos: Boolean = false,
     ): CrontabConfig {
         return CrontabConfig(
@@ -801,7 +800,6 @@ class CrontabHistoryDetailTest {
             downloadImages = true,
             downloadVideos = true,
             skipExistingFile = true,
-            checkSha1 = checkSha1,
             fetchFromDbSize = 2,
             downloaders = 1,
             verifiers = 1,

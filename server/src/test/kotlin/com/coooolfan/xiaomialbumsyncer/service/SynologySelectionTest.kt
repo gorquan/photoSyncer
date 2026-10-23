@@ -203,7 +203,6 @@ class SynologySelectionTest {
         val config = jacksonObjectMapper().readValue<CrontabConfig>("""{"expression":"0 0 * * * ?","timeZone":"UTC","targetPath":"/data/\u0024{album}/\u0024{fileName}","downloadImages":true,"downloadVideos":false}""")
         assertFalse(config.synologyPhotos)
         assertTrue(config.downloadLivePhotos)
-        assertFalse(config.checkSha1)
     }
 
     private fun resource(album: Album, checksum: String, record: String, role: String, video: Boolean = false) = Asset {

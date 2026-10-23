@@ -19,8 +19,6 @@ data class CrontabConfig(
 
     val skipExistingFile: Boolean = true,
 
-    val checkSha1: Boolean = false,
-
     val fetchFromDbSize: Int = 2,
 
     val downloaders: Int = 8,

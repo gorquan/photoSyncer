@@ -72,8 +72,8 @@ interface CrontabHistoryDetail {
                 this.asset = asset
                 this.filePath = genFilePath(history, asset)
                 this.downloadCompleted = false
-                this.sha1Verified = !history.crontab.config.checkSha1
-                this.verificationStatus = if (history.crontab.config.checkSha1) VerificationStatus.PENDING else VerificationStatus.SKIPPED
+                this.sha1Verified = false
+                this.verificationStatus = VerificationStatus.PENDING
                 this.localSha256 = null
                 this.verifiedSize = null
                 this.exifFilled = !history.crontab.config.synologyPhotos

@@ -188,7 +188,7 @@ class MediaPublisher(private val root: Path) {
         val digest = digestOriginal(path, detail.asset.size)
         validateOriginalContainer(path, detail.asset.mimeType)
         val motion = inspectMotionPhoto(path, detail.asset.motionPhotoHint).requireSafeOriginal()
-        Triple(digest, verifySource(detail.asset, detail.crontabHistory.crontab.config, digest), motion)
+        Triple(digest, verifySource(detail.asset, digest), motion)
     } catch (failure: Exception) {
         try { failed(detail, failure) } catch (persistFailure: Exception) { failure.addSuppressed(persistFailure) }
         throw failure
@@ -220,8 +220,7 @@ class MediaPublisher(private val root: Path) {
         return retained
     }
 
-    private fun verifySource(asset: Asset, config: CrontabConfig, digest: OriginalDigests): VerificationStatus {
-        if (!config.checkSha1) return VerificationStatus.SKIPPED
+    private fun verifySource(asset: Asset, digest: OriginalDigests): VerificationStatus {
         if (asset.album.account.provider == CloudProvider.ICLOUD) return VerificationStatus.TRANSPORT_VERIFIED
         require(asset.checksum.matches(Regex("[a-fA-F0-9]{40}")) && digest.sha1.equals(asset.checksum, true)) { "小米云文件 SHA-1 不匹配" }
         return VerificationStatus.SOURCE_VERIFIED
