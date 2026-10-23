@@ -70,8 +70,7 @@ class MediaDeletionServiceTest {
             val configured = CrontabHistoryDetail(detail) {
                 crontabHistory = CrontabHistory(detail.crontabHistory) {
                     crontab = Crontab(detail.crontabHistory.crontab) {
-                        config = detail.crontabHistory.crontab.config.copy(synologyPhotos = photos,
-                            synologyPhotos = true)
+                        config = detail.crontabHistory.crontab.config.copy(synologyPhotos = photos)
                     }
                 }
             }

@@ -187,8 +187,16 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
             select(table.fetchBy { allScalarFields(); account { provider() } })
         }
         require(albums.isNotEmpty()) { "镜像相册范围不完整，本次保留文件" }
-        val timeline = if (crontab.syncMode == CrontabSyncMode.TIMELINE)
-            fetchAlbumsTimelineSnapshot(crontab.accountId, albums) else null
+        // Xiaomi's timeline endpoint is not available for every account/album. A mirror
+        // still has a safe fallback: enumerate the selected albums completely and use that
+        // inventory for deletion decisions. The next run can try the timeline again.
+        val timeline = if (crontab.syncMode == CrontabSyncMode.TIMELINE) {
+            runCatching { fetchAlbumsTimelineSnapshot(crontab.accountId, albums) }
+                .onFailure { error ->
+                    log.warn("小米时间线不可用，将对镜像任务执行完整相册枚举：{}", error.message)
+                }
+                .getOrNull()
+        } else null
         val previous = deletion.inventory(crontab)
         val observed = java.util.concurrent.ConcurrentHashMap<Long, Set<String>>()
         runBlocking(Dispatchers.IO) {

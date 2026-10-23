@@ -43,11 +43,13 @@ class ICloudDeletionTest {
         validateICloudEnumerationPage(json("""{"records":[]}"""))
         validateICloudEnumerationPage(json("""{"records":[{"recordName":"asset","recordType":"CPLAsset"},{"recordName":"master","recordType":"CPLMaster"}]}"""))
         validateICloudEnumerationPage(json("""{"records":[{"recordName":"asset","recordType":"CPLAsset"}],"continuationMarker":"opaque"}"""))
+        validateICloudEnumerationPage(json("""{"records":[{"recordName":"asset","recordType":"CPLAsset"}],"continuationMarker":{"zone":"PrimarySync","rank":200}}"""))
         for (response in listOf(
             "{}", """{"records":{}}""", """{"records":[],"continuationMarker":"more"}""",
             """{"records":[{"recordName":"master","recordType":"CPLMaster"}]}""",
             """{"records":[{"recordName":"asset","recordType":"CPLAsset","serverErrorCode":"UNKNOWN_ITEM"}]}""",
             """{"records":[{"recordName":"asset","recordType":"CPLAsset","fields":{"isDeleted":{"value":1}}}]}""",
+            """{"records":[{"recordName":"asset","recordType":"CPLAsset"}],"continuationMarker":[]}""",
         )) assertThrows(IllegalArgumentException::class.java, { validateICloudEnumerationPage(json(response)) }, response)
     }
 }
