@@ -563,17 +563,6 @@ watch(
                     {{ t('cronform.advanced.skipExistingFileHint') }}
                   </div>
                 </div>
-                <div class="space-y-1">
-                  <div
-                    class="flex items-center gap-2 text-[13px] text-slate-600 dark:text-slate-300"
-                  >
-                    <ToggleSwitch v-model="form.config.checkSha1" />
-                    <span>{{ t('cronform.advanced.checkSha1') }}</span>
-                  </div>
-                  <div class="text-[13px] text-slate-500 dark:text-slate-400">
-                    {{ t('cronform.advanced.checkSha1Hint') }}
-                  </div>
-                </div>
               </div>
 
               <Panel :header="t('cronform.concurrency.title')" toggleable collapsed class="mt-4">

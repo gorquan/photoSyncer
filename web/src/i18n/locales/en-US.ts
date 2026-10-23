@@ -423,9 +423,6 @@ const messages: typeof zh = {
       skipExistingFile: 'Skip existing files',
       skipExistingFileHint:
         'Skips the download if the target file already exists. Only applies when the save path already contains data.',
-      checkSha1: 'Verify files',
-      checkSha1Hint:
-        'Xiaomi compares source SHA-1. iCloud checks size and supported containers and records local SHA-256; this does not compare an Apple source digest. Failures retry next run.',
     },
     concurrency: {
       title: 'Concurrency & performance',

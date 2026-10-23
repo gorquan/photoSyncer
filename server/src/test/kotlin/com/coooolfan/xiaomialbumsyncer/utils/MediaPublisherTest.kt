@@ -20,7 +20,7 @@ class MediaPublisherTest {
     private val jpeg by lazy { ByteArrayOutputStream().also { ImageIO.write(BufferedImage(2, 3, BufferedImage.TYPE_INT_RGB), "jpg", it) }.toByteArray() }
     private val mov = ByteBuffer.allocate(25).putInt(9).put("mdat".toByteArray()).put(1).putInt(8).put("moov".toByteArray()).putInt(8).put("wide".toByteArray()).array()
     private val mapper = jacksonObjectMapper()
-    private fun detail(role: String = "resOriginal", version: String = "v1", extension: String = if (role == "resOriginalVidCompl") "mov" else "jpg", checked: Boolean = true): CrontabHistoryDetail {
+    private fun detail(role: String = "resOriginal", version: String = "v1", extension: String = if (role == "resOriginalVidCompl") "mov" else "jpg"): CrontabHistoryDetail {
         val provider = ProviderAccount { id = 1; this.provider = CloudProvider.ICLOUD }
         val album = Album { id = 1; accountId = 1; account = provider; remoteKey = ICloudAlbumKey("PrimarySync", "album").encode(); name = "album" }
         val asset = Asset {
@@ -31,7 +31,7 @@ class MediaPublisherTest {
             size = if (role == "resOriginalVidCompl") mov.size.toLong() else jpeg.size.toLong()
             dateTaken = Instant.EPOCH; motionPhotoHint = false
         }
-        val task = Crontab { id = 1; accountId = 1; name = "test"; config = CrontabConfig("0 0 * * * ?", "UTC", directory.resolve("out").toString(), true, false, false, checkSha1 = checked, synologyPhotos = true) }
+        val task = Crontab { id = 1; accountId = 1; name = "test"; config = CrontabConfig("0 0 * * * ?", "UTC", directory.resolve("out").toString(), true, false, false, synologyPhotos = true) }
         val history = CrontabHistory { id = 1; crontab = task; startTime = Instant.EPOCH }
         return CrontabHistoryDetail(CrontabHistoryDetail.init(history, asset)) { id = asset.id; filePath = directory.resolve("out/photo.$extension").toString() }
     }
@@ -98,7 +98,7 @@ class MediaPublisherTest {
     }
 
     @Test fun photosMigrationDownloadsOnlyMissingOrCorruptComponent() {
-        val inputs = listOf(detail(checked = false), detail("resOriginalVidCompl", checked = false))
+        val inputs = listOf(detail(), detail("resOriginalVidCompl"))
         val old = legacy(inputs)
         Files.delete(Path.of(old.outputs.last().path))
         val downloaded = mutableListOf<AssetType>()
@@ -292,9 +292,9 @@ class MediaPublisherTest {
         assertNoRetainedMedia()
     }
 
-    @Test fun incompleteOrInvalidOriginalFailsEvenWhenSourceCheckDisabledAndKeepsPreviousExport() {
+    @Test fun incompleteOrInvalidOriginalFailsAndKeepsPreviousExport() {
         val original = detail(); publish(listOf(original))
-        val replacement = detail(version = "v2", checked = false)
+        val replacement = detail(version = "v2")
         assertThrows(IllegalArgumentException::class.java) { publish(listOf(replacement), "v2", download = { _, path -> Files.write(path, jpeg.dropLast(1).toByteArray()); true }) }
         assertArrayEquals(jpeg, Files.readAllBytes(Path.of(original.filePath)))
         assertThrows(IllegalArgumentException::class.java) { publish(listOf(replacement), "v2", download = { _, path -> Files.write(path, ByteArray(jpeg.size)); true }) }
@@ -378,7 +378,7 @@ class MediaPublisherTest {
     }
 
     @Test fun originalValidationFailureReportsTheAffectedResourceWhileUnavailableDownloadDoesNot() {
-        val input = detail(checked = false)
+        val input = detail()
         val failed = mutableListOf<Long>()
         val publisher = MediaPublisher(directory.resolve("archive"))
         assertThrows(IllegalArgumentException::class.java) {

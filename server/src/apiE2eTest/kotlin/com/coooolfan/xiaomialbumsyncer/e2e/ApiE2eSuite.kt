@@ -128,7 +128,6 @@ class ApiE2eSuite {
             "downloadImages" to true,
             "downloadVideos" to false,
             "skipExistingFile" to false,
-            "checkSha1" to true,
             "fetchFromDbSize" to 2,
             "downloaders" to 1,
             "verifiers" to 1,
