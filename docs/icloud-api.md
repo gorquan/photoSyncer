@@ -255,7 +255,7 @@ iCloud 位点镜像使用独立的 `mirror-v2` 位点和每任务所选相册清
 
 下载 URL 按需通过 lookup 刷新，初始地址必须为 HTTPS。CDN 客户端不携带 Apple 认证头和 cookie，支持重定向。首次 CDN 请求返回 401、403、410 时重新 lookup 并重试一次；其他失败直接交给任务重试。
 
-生产发布使用 `MediaPublicationService` / `MediaPublisher` 下载到临时目录，校验、按需适配后发布到目标目录。只长期保留目标文件；不另存原件副本。iCloud 的不透明 `fileChecksum` 作为来源版本保存；检查长度、容器及动态结构，并单独记录本地 SHA-256，不声称验证了 Apple 内容签名。Apple 实况图片与配套视频按组准备，保留原始格式、编码及配对元数据。旧版归档字段仅用于兼容读取和清理。具体目录和恢复规则见 [Synology Photos 使用说明](synology-photos.md)。
+生产发布使用 `MediaPublicationService` / `MediaPublisher` 下载到临时目录，校验、按需适配后发布到目标目录。只长期保留目标文件；不另存原件副本。iCloud 的不透明 `fileChecksum` 作为来源版本保存；检查长度、容器及动态结构，不把本地摘要当作 Apple 内容签名。发布凭证可以保留目标文件指纹，用于复用、复制后检查和安全清理。Apple 实况图片与配套视频按组准备，保留原始格式、编码及配对元数据。旧版归档字段仅用于兼容读取和清理。具体目录和恢复规则见 [Synology Photos 使用说明](synology-photos.md)。
 
 资源范围见 CPLMaster 字段表，不下载编辑渲染版本、缩略图或 sidecar。文件名使用稳定资源后缀，避免一个逻辑资产的多个原件覆盖彼此。
 

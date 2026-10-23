@@ -71,7 +71,12 @@ class MediaPublicationService(private val sql: KSqlClient, private val media: Cl
                             set(table.downloadCompleted, true)
                             set(table.sha1Verified, true)
                             set(table.verificationStatus, output.verification)
-                            set(table.localSha256, output.originalSha256)
+                            // Apple does not expose a comparable source digest. Keep
+                            // the history field for Xiaomi's cloud SHA-1 workflow;
+                            // publication output fingerprints remain in the receipt.
+                            set(table.localSha256, output.originalSha256.takeIf {
+                                detail.asset.album.account.provider != CloudProvider.ICLOUD
+                            })
                             set(table.verifiedSize, output.size)
                             set(table.archivePath, output.archive.takeIf { it.isNotBlank() })
                             set(table.outputSha256, output.outputSha256)
