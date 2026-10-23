@@ -92,7 +92,7 @@ class ICloudPhotos(private val accounts: ICloudAccountService) {
         var rank = 0L
         var total = 0L
         val seen = mutableSetOf<String>()
-        var marker: String? = null
+        var marker: JsonNode? = null
         val seenMarkers = mutableSetOf<String>()
         while (true) {
             val filters = mutableListOf(filter("startRank", "INT64", rank), filter("direction", "STRING", "ASCENDING"))
@@ -105,7 +105,7 @@ class ICloudPhotos(private val accounts: ICloudAccountService) {
             val page = client.cloud("records/query", body)
             if (strict) validateICloudEnumerationPage(page)
             val nextMarker = iCloudAssetContinuationMarker(page)
-            if (nextMarker != null) require(seenMarkers.add(nextMarker)) { "iCloud 资产分页没有推进，请重试同步" }
+            if (nextMarker != null) require(seenMarkers.add(nextMarker.toString())) { "iCloud 资产分页没有推进，请重试同步" }
             val records = page.path("records").toList()
             val assets = records.filter { it.path("recordType").asText() == "CPLAsset" }
             require(assets.isNotEmpty() || nextMarker == null) { "iCloud 资产续页缺少资产记录，无法确认完整性" }
@@ -339,9 +339,12 @@ internal fun validateICloudEnumerationPage(page: JsonNode) {
         iCloudDeletionFlag(field(it, "isExpunged")) }) { "iCloud 活跃资产分页包含删除记录，请重试同步" }
 }
 
-private fun iCloudAssetContinuationMarker(page: JsonNode): String? {
+private fun iCloudAssetContinuationMarker(page: JsonNode): JsonNode? {
     val marker = page.get("continuationMarker") ?: return null
     if (marker.isNull) return null
-    require(marker.isTextual && marker.asText().isNotBlank()) { "iCloud 资产续页标记无效，无法确认完整性" }
-    return marker.asText()
+    require(
+        marker.isTextual && marker.asText().isNotBlank() ||
+            marker.isObject && marker.size() > 0
+    ) { "iCloud 资产续页标记无效，无法确认完整性" }
+    return marker
 }
