@@ -334,11 +334,14 @@ watch(
               </div>
             </div>
 
-            <label class="flex items-center gap-2 text-[13px] text-slate-600 dark:text-slate-300">
+            <label
+              v-if="isICloud"
+              class="flex items-center gap-2 text-[13px] text-slate-600 dark:text-slate-300"
+            >
               <Checkbox v-model="form.config.downloadLivePhotos" binary />
               <span>{{ t('cronform.toggle.downloadLivePhotos') }}</span>
             </label>
-            <p class="text-[12px] text-slate-500">
+            <p v-if="isICloud" class="text-[12px] text-slate-500">
               {{ t('cronform.toggle.downloadLivePhotosHint') }}
             </p>
 
