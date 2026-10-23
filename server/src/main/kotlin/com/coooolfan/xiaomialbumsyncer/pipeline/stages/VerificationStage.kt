@@ -9,7 +9,13 @@ import org.babyfish.jimmer.sql.kt.ast.expression.eq
 import org.noear.solon.annotation.Managed
 import java.nio.file.Path
 
-/** Stores evidence for original bytes. CloudKit fileChecksum is an opaque version signature. */
+/**
+ * Verifies a downloaded source before publication.
+ *
+ * Apple does not expose a digest that can be compared with the downloaded bytes, so
+ * iCloud verification deliberately avoids calculating a local SHA-256. The local
+ * output fingerprint used later by publication and deletion remains separate.
+ */
 @Managed
 class VerificationStage(
     private val sql: KSqlClient,
@@ -19,16 +25,18 @@ class VerificationStage(
         if (context.sha1Verified) return context
         val evidence = try {
             val path = Path.of(context.filePath)
-            val digest = digestOriginal(path, context.asset.size)
             val status = if (media.isICloud(context.crontabHistory.crontab.accountId)) {
+                val size = java.nio.file.Files.size(path)
+                require(size == context.asset.size) { "文件大小不匹配：预期 ${context.asset.size}，实际 $size" }
                 validateOriginalContainer(path, context.asset.mimeType)
-                VerificationStatus.TRANSPORT_VERIFIED
+                VerificationEvidence(VerificationStatus.TRANSPORT_VERIFIED, null, size)
             } else {
+                val digest = digestOriginal(path, context.asset.size)
                 require(context.asset.checksum.matches(Regex("[0-9a-fA-F]{40}"))) { "小米云 SHA-1 校验值无效" }
                 require(digest.sha1.equals(context.asset.checksum, ignoreCase = true)) { "小米云文件 SHA-1 不匹配" }
-                VerificationStatus.SOURCE_VERIFIED
+                VerificationEvidence(VerificationStatus.SOURCE_VERIFIED, digest.sha256, digest.size)
             }
-            status to digest
+            status
         } catch (interrupted: InterruptedException) {
             Thread.currentThread().interrupt()
             throw interrupted
@@ -50,16 +58,22 @@ class VerificationStage(
         }
         sql.executeUpdate(CrontabHistoryDetail::class) {
             set(table.sha1Verified, true)
-            set(table.verificationStatus, evidence.first)
-            set(table.localSha256, evidence.second.sha256)
-            set(table.verifiedSize, evidence.second.size)
+            set(table.verificationStatus, evidence.status)
+            set(table.localSha256, evidence.localSha256)
+            set(table.verifiedSize, evidence.size)
             where(table.id eq context.id)
         }
         return CrontabHistoryDetail(context) {
             sha1Verified = true
-            verificationStatus = evidence.first
-            localSha256 = evidence.second.sha256
-            verifiedSize = evidence.second.size
+            verificationStatus = evidence.status
+            localSha256 = evidence.localSha256
+            verifiedSize = evidence.size
         }
     }
+
+    private data class VerificationEvidence(
+        val status: VerificationStatus,
+        val localSha256: String?,
+        val size: Long,
+    )
 }

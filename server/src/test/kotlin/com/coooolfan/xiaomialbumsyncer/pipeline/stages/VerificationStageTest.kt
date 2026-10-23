@@ -39,7 +39,7 @@ class VerificationStageTest {
                 assertTrue(result.sha1Verified)
                 assertTrue(stored.downloadCompleted)
                 assertEquals(VerificationStatus.TRANSPORT_VERIFIED, stored.verificationStatus)
-                assertEquals(sha256, stored.localSha256)
+                assertNull(stored.localSha256)
                 assertEquals(content.size.toLong(), stored.verifiedSize)
                 assertArrayEquals(content, Files.readAllBytes(Path.of(detail.filePath)))
             }
