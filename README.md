@@ -11,7 +11,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="GPL-3.0"></a>
 </p>
 
-<p align="center"><img src="docs/assets/sync-flow.svg" alt="photoSyncer 同步流程"></p>
+<p align="center"><img src="docs/assets/sync-flow.png" alt="photoSyncer 同步流程"></p>
 
 photoSyncer 是一个面向家庭 NAS 的照片和视频同步工具，支持小米云、Apple iCloud Photos、多账号、定时任务、失败重试和 Synology Photos 展示。
 
