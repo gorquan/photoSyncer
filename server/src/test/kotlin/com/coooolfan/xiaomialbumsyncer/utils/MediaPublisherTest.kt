@@ -31,7 +31,7 @@ class MediaPublisherTest {
             size = if (role == "resOriginalVidCompl") mov.size.toLong() else jpeg.size.toLong()
             dateTaken = Instant.EPOCH; motionPhotoHint = false
         }
-        val task = Crontab { id = 1; accountId = 1; name = "test"; config = CrontabConfig("0 0 * * * ?", "UTC", directory.resolve("out").toString(), true, false, false, synologyPhotos = true) }
+        val task = Crontab { id = 1; accountId = 1; name = "test"; config = CrontabConfig("0 0 * * * ?", "UTC", directory.resolve("out").toString(), downloadImages = true, downloadVideos = false, skipExistingFile = true, synologyPhotos = true) }
         val history = CrontabHistory { id = 1; crontab = task; startTime = Instant.EPOCH }
         return CrontabHistoryDetail(CrontabHistoryDetail.init(history, asset)) { id = asset.id; filePath = directory.resolve("out/photo.$extension").toString() }
     }

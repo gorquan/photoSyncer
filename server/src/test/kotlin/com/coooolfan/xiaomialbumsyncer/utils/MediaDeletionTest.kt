@@ -30,7 +30,8 @@ class MediaDeletionTest {
         val asset = Asset {
             id = if (role == "resOriginalVidCompl") 2 else 1; this.album = album
             remoteKey = if (provider == CloudProvider.ICLOUD) ICloudResourceKey("record", role).encode() else "record"
-            checksum = version; fileName = if (role == "resOriginalVidCompl") "photo.mov" else "photo.jpg"
+            checksum = if (provider == CloudProvider.XIAOMI) sha1(if (role == "resOriginalVidCompl") mov else jpeg) else version
+            fileName = if (role == "resOriginalVidCompl") "photo.mov" else "photo.jpg"
             mimeType = if (role == "resOriginalVidCompl") "video/quicktime" else "image/jpeg"
             type = if (role == "resOriginalVidCompl") AssetType.VIDEO else AssetType.IMAGE
             size = if (role == "resOriginalVidCompl") mov.size.toLong() else jpeg.size.toLong()
@@ -57,6 +58,7 @@ class MediaDeletionTest {
         return legacy
     }
     private fun hash(value: String) = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(value.toByteArray()))
+    private fun sha1(bytes: ByteArray) = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-1").digest(bytes))
 
     @Test fun newPublicationDeletesOnlyTargetsAndNeverCreatesOriginalStorage() {
         val inputs = listOf(detail(), detail("resOriginalVidCompl"))

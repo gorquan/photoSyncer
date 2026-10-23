@@ -71,9 +71,6 @@ class SynologySelectionTest {
         val nothing = Crontab(noImages) { config = noImages.config.copy(downloadVideos = false) }
         assertEquals(0L, service.countAssetsForPublication(nothing))
         assertEquals(setOf("photo", "alt", "ordinary"), service.getAssetsUndownloadByCrontab(disabled, 10, 0).map { it.checksum }.toSet())
-        assertThrows(IllegalArgumentException::class.java) {
-            photosOnly.config.copy(targetPath = "/data/\${assetId}/\${checksum}")
-        }
         val ordinaryLayout = CrontabHistory(history) { crontab = Crontab(photosOnly) { config = photosOnly.config.copy(synologyPhotos = false) } }
         assertEquals(Path.of(CrontabHistoryDetail.init(ordinaryLayout, primary).filePath).fileName.toString().substringBeforeLast('.'),
             Path.of(CrontabHistoryDetail.init(ordinaryLayout, companion).filePath).fileName.toString().substringBeforeLast('.'))

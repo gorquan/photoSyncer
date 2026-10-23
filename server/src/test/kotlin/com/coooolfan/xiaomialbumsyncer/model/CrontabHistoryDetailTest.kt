@@ -229,7 +229,7 @@ class CrontabHistoryDetailTest {
     }
 
     @Test
-    fun expressionInterpolatesRecordingType() {
+    fun expressionLeavesRemovedRecordingTokensLiteral() {
         val template = "\${recordingTypeId}/\${recordingType}/\${assetId}_\${fileName}"
         val config = buildConfig(targetPath = resolveTargetPath("/base", template))
         val history = buildHistory(config, Instant.parse("2024-05-06T12:00:00Z"))
@@ -244,12 +244,14 @@ class CrontabHistoryDetailTest {
 
         val detail = CrontabHistoryDetail.init(history, asset)
 
-        val expected = Path("/base", "1/通话录音/12345_call.mp3").toString()
+        // Recording synchronization was removed. Legacy path templates that still
+        // mention these tokens remain literal instead of reintroducing the feature.
+        val expected = Path("/base", "\${recordingTypeId}/\${recordingType}/12345_call.mp3").toString()
         assertEquals(expected, detail.filePath)
     }
 
     @Test
-    fun expressionInterpolatesBlankRecordingTypeForNonAudioAsset() {
+    fun expressionLeavesRemovedRecordingTokenLiteralForNonAudioAsset() {
         val template = "media/\${recordingType}/\${fileName}"
         val config = buildConfig(targetPath = resolveTargetPath("/base", template))
         val history = buildHistory(config, Instant.parse("2024-05-06T12:00:00Z"))
@@ -258,12 +260,12 @@ class CrontabHistoryDetailTest {
 
         val detail = CrontabHistoryDetail.init(history, asset)
 
-        val expected = Path("/base", "media/photo.jpg").toString()
+        val expected = Path("/base", "media/\${recordingType}/photo.jpg").toString()
         assertEquals(expected, detail.filePath)
     }
 
     @Test
-    fun expressionOnlyContainingRecordingTypeIsSupported() {
+    fun expressionOnlyContainingRemovedRecordingTypeIsLiteral() {
         val template = "\${recordingType}"
         val config = buildConfig(targetPath = resolveTargetPath("/base", template))
         val history = buildHistory(config, Instant.parse("2024-05-06T12:00:00Z"))
@@ -277,7 +279,7 @@ class CrontabHistoryDetailTest {
 
         val detail = CrontabHistoryDetail.init(history, asset)
 
-        assertEquals(Path("/base", "应用录音").toString(), detail.filePath)
+        assertEquals(Path("/base", "\${recordingType}").toString(), detail.filePath)
     }
 
     @Test
