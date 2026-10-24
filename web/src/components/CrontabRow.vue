@@ -78,7 +78,10 @@ function formatRelative(time?: string) {
 
 const recentHistories = computed(() => {
   const list = [...(props.crontab.histories || [])]
-  list.sort((a, b) => (a.startTime < b.startTime ? 1 : -1))
+  list.sort((a, b) => {
+    if (a.startTime !== b.startTime) return a.startTime < b.startTime ? 1 : -1
+    return b.id - a.id
+  })
   return list.slice(0, 5)
 })
 

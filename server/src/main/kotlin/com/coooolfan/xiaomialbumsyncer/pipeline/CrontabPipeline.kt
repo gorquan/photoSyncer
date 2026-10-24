@@ -122,6 +122,9 @@ class CrontabPipeline(
                     .distinctBy { it.first + ":" + it.second.joinToString(",") { asset -> asset.id.toString() } }
                     .toList()
             }
+            if (retryAssetIds != null && retryGroups.isNullOrEmpty()) {
+                throw IllegalStateException("失败资源已不存在或不在当前任务范围内，未执行重试")
+            }
             val plannedAssetCount = retryGroups?.sumOf { it.second.size.toLong() }
                 ?: assetService.countAssetsForPublication(crontab)
             crontabService.finishCrontabHistoryFetchedAllAssets(crontabHistory, plannedAssetCount)

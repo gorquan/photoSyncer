@@ -163,6 +163,25 @@ class CloudDeletionServiceTest {
         assertTrue(deletion.deletedGroups(job).isEmpty())
     } }
 
+    @Test fun failedResourceRetryRejectsAnOlderHistoryWhenANewerRunExists() = withStore { store -> with(store) {
+        val older = sql.saveCommand(CrontabHistory {
+            crontab = job
+            startTime = Instant.parse("2026-01-01T00:00:00Z")
+            endTime = Instant.parse("2026-01-01T00:01:00Z")
+            fetchedAllAssets = true
+        }, SaveMode.INSERT_ONLY).execute().modifiedEntity
+        sql.saveCommand(CrontabHistory {
+            crontab = job
+            startTime = Instant.parse("2026-01-02T00:00:00Z")
+            endTime = Instant.parse("2026-01-02T00:01:00Z")
+            fetchedAllAssets = true
+        }, SaveMode.INSERT_ONLY).execute()
+
+        assertThrows(com.coooolfan.xiaomialbumsyncer.exception.BadRequestException::class.java) {
+            CrontabService(sql).retryFailedCrontabHistory(older.id)
+        }
+    } }
+
     @Test fun iCloudPlansRejectModeChangesAndDisablingPhotosBeforeAnyFieldsAreSaved() = withStore { store -> with(store) {
         val fetcher = org.babyfish.jimmer.sql.kt.fetcher.newFetcher(Crontab::class).by { allScalarFields() }
         val service = CrontabService(sql)
