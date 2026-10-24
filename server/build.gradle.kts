@@ -186,6 +186,11 @@ fun Test.configureApiE2e(target: String, memoryBenchmark: Boolean = false) {
     }
     maxParallelForks = 1
     outputs.upToDateWhen { false }
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showStandardStreams = true
+    }
     systemProperty("xiaomi.e2e.target", target)
     systemProperty("xiaomi.e2e.mockExecutable", xasMockExecutable.get().asFile.absolutePath)
     systemProperty("xiaomi.e2e.mockScenario", xasMockScenario.asFile.absolutePath)

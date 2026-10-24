@@ -180,9 +180,9 @@ class CrontabController(private val service: CrontabService) {
     @Mapping("/history/{id}/details", method = [MethodType.GET])
     fun listCrontabHistoryDetails(
         @Path id: Long,
-        @Param pageIndex: Int?,
-        @Param pageSize: Int?,
-        @Param failedOnly: Boolean?
+        @Param(required = false) pageIndex: Int?,
+        @Param(required = false) pageSize: Int?,
+        @Param(required = false) failedOnly: Boolean?
     ): Page<@FetchBy("CRONTAB_HISTORY_DETAIL_FETCHER") CrontabHistoryDetail> {
         return service.listCrontabHistoryDetails(
             id,
@@ -211,8 +211,8 @@ class CrontabController(private val service: CrontabService) {
     @Mapping("/{crontabId}/histories", method = [MethodType.GET])
     fun listCrontabHistoryGroups(
         @Path crontabId: Long,
-        @Param pageIndex: Int?,
-        @Param pageSize: Int?
+        @Param(required = false) pageIndex: Int?,
+        @Param(required = false) pageSize: Int?
     ): Page<CrontabHistoryGroup> {
         return service.listCrontabHistoryGroups(crontabId, pageIndex ?: 0, pageSize ?: 10)
     }

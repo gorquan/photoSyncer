@@ -50,6 +50,11 @@ jobs:
           go-version: '1.25.x'
           cache-dependency-path: xas-mock/go.mod
 
+      - name: 安装 ExifTool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libimage-exiftool-perl
+
       - name: 执行 JVM API E2E
         working-directory: server
         run: ./gradlew clean apiE2eJvm --no-daemon
@@ -74,6 +79,11 @@ jobs:
         with:
           go-version: '1.25.x'
           cache-dependency-path: xas-mock/go.mod
+
+      - name: 安装 ExifTool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libimage-exiftool-perl
 
       - name: 检查 Native Image 元数据
         working-directory: server

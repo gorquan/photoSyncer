@@ -151,9 +151,11 @@ class ApiE2eSuite {
         api.post("/api/crontab/$crontabId/executions").expect(200)
 
         val historyId = awaitCompletedHistory(api, crontabId)
-        val detailPage = api.json(
-            api.get("/api/crontab/history/$historyId/details?pageIndex=0&pageSize=10").expect(200)
-        )
+        val detailResponse = api.get("/api/crontab/history/$historyId/details?pageIndex=0&pageSize=10")
+        check(detailResponse.status == 200) {
+            "获取历史明细失败: historyId=$historyId, status=${detailResponse.status}, body=${detailResponse.body}"
+        }
+        val detailPage = api.json(detailResponse)
         assertEquals(1, detailPage.path("totalRowCount").asInt())
         val detail = detailPage.path("rows").first()
         assertTrue(detail.path("downloadCompleted").asBoolean())
