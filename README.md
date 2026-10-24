@@ -7,7 +7,7 @@
 <p align="center"><strong>把小米云和 Apple iCloud Photos 稳定地同步到自己的存储。</strong></p>
 
 <p align="center">
-  <a href="https://github.com/gorquan/XiaomiAlbumSyncer/actions"><img src="https://img.shields.io/github/actions/workflow/status/gorquan/XiaomiAlbumSyncer/build.yml?label=build" alt="Build"></a>
+  <a href="https://github.com/gorquan/photoSyncer/actions"><img src="https://img.shields.io/github/actions/workflow/status/gorquan/photoSyncer/docker-publish.yml?label=build" alt="Build"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="GPL-3.0"></a>
 </p>
 
@@ -67,7 +67,7 @@ photoSyncer 是一个面向家庭 NAS 的照片和视频同步工具，支持小
 需要 Git、Node.js 24.20+、JDK 25 和 Docker。
 
 ```bash
-git clone https://github.com/gorquan/XiaomiAlbumSyncer.git photoSyncer
+git clone https://github.com/gorquan/photoSyncer.git
 cd photoSyncer
 
 (cd web && npm install && npm run build)
@@ -75,7 +75,7 @@ mkdir -p server/src/main/resources/static
 cp -R web/dist/. server/src/main/resources/static/
 (cd server && ./gradlew clean solonJar -PappVersion="$(git rev-parse --short HEAD)")
 
-cp server/build/libs/XiaomiAlbumSyncer-$(git rev-parse --short HEAD).jar docker/app.jar
+cp "$(find server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*-plain.jar' | head -n 1)" docker/app.jar
 mkdir -p db download
 docker compose -f docker/docker-compose.yml up -d --build
 ```
@@ -97,6 +97,17 @@ PHOTO_SYNCER_EXPORT_DIR=/volume2/photo
 ```
 
 不要把宿主机路径直接填进任务；任务始终使用容器内路径 `/photos`。运行用户必须对数据库目录和照片目录有读写权限。
+
+### GitHub Actions 与 Docker 镜像
+
+推送到 `main` 或推送 `v*` 版本标签后，GitHub Actions 会自动构建并发布多架构 JVM 镜像到 GitHub Container Registry：
+
+```text
+ghcr.io/gorquan/photosyncer:main
+ghcr.io/gorquan/photosyncer:v1.0.0
+```
+
+`main` 分支同时更新 `latest` 标签。镜像只使用仓库内的构建产物，不需要配置 Docker Hub 账号；发布权限由 GitHub Actions 自带的 `GITHUB_TOKEN` 提供。
 
 ### 第一次配置
 
