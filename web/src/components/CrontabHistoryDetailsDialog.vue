@@ -224,7 +224,7 @@ const stepTagClass = '!whitespace-nowrap !text-[13px]'
               size="small"
               severity="danger"
               :loading="retrying"
-              :disabled="loading"
+              :disabled="loading || retrying"
               v-tooltip.bottom="t('schedule.details.retryFailedHint')"
               @click="emit('retry')"
             />
