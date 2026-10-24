@@ -21,7 +21,7 @@ class DataSource {
         val config = HikariConfig()
         config.jdbcUrl = resolveSQLiteUrl(sqliteUrlProperties.url) {
             val dbPath = Paths.get(sqlite)
-            Files.createDirectories(dbPath.parent)
+            dbPath.parent?.let(Files::createDirectories)
             buildSQLiteUrl(dbPath, sqliteUrlProperties.toOptions())
         }
         config.driverClassName = "org.sqlite.JDBC"

@@ -5,7 +5,7 @@ import com.coooolfan.xiaomialbumsyncer.service.SystemConfigService
 import org.babyfish.jimmer.client.meta.Api
 import org.noear.solon.annotation.Controller
 import org.noear.solon.annotation.Mapping
-import org.noear.solon.annotation.Param
+import org.noear.solon.annotation.Body
 import org.noear.solon.core.handle.MethodType
 
 /**
@@ -28,14 +28,14 @@ class TokenController(private val service: SystemConfigService) {
      *
      * @param password 用户密码，用于登录认证
      *
-     * @api GET /api/token
+     * @api POST /api/token
      * @permission 公开接口，无需认证
      * @description 调用SystemConfigService.login()方法进行用户认证
      */
     @Api
-    @Mapping("", method = [MethodType.GET])
-    fun login(@Param password: String) {
-        return service.login(LoginRequest(password))
+    @Mapping("", method = [MethodType.POST])
+    fun login(@Body request: LoginRequest) {
+        return service.login(request)
     }
 
     /**

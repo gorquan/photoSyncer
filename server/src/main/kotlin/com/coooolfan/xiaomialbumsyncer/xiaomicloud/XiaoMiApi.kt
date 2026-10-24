@@ -216,7 +216,7 @@ class XiaoMiApi(private val tokenManager: TokenManager) {
             .add("meta", downloadMeta)
             .build()
         val downloadReq = Request.Builder().url(downloadUrl).ua().post(formBody).build()
-        client().executeWithRetry(downloadReq).use { downloadResp ->
+        client().executeWithRetry(downloadReq, retryNonIdempotent = true).use { downloadResp ->
             throwIfNotSuccess(downloadResp.code)
             // 4. 保存文件
             downloadResp.body.saveToFile(targetPath)

@@ -48,8 +48,13 @@ fun ObjectMapper.readJsonpTree(body: ResponseBody): JsonNode =
         readTree(input)
     }
 
-// 超时时自动重试一次
-fun OkHttpClient.executeWithRetry(request: Request): Response {
+// Idempotent requests are retried once on a socket timeout. Callers may opt in
+// for a non-idempotent-looking request when the provider explicitly defines it
+// as a safe download operation.
+fun OkHttpClient.executeWithRetry(request: Request, retryNonIdempotent: Boolean = false): Response {
+    if (!retryNonIdempotent && request.method !in setOf("GET", "HEAD", "OPTIONS")) {
+        return newCall(request).execute()
+    }
     return try {
         newCall(request).execute()
     } catch (_: SocketTimeoutException) {

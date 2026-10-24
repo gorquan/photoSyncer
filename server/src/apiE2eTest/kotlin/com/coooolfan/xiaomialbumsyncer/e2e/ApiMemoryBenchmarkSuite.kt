@@ -162,7 +162,7 @@ class ApiMemoryBenchmarkSuite {
 
         private fun initializeApplication(): Long {
             api.post("/api/system-config", mapOf("password" to "benchmark-password")).expect(200)
-            api.get("/api/token?password=${api.encode("benchmark-password")}").expect(200)
+            api.post("/api/token", mapOf("password" to "benchmark-password")).expect(200)
             api.post("/api/system-config/mount-path", mapOf("path" to workDir.toString())).expect(200)
 
             val account = api.json(

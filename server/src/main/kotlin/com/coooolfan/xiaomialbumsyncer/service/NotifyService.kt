@@ -8,6 +8,7 @@ import com.coooolfan.xiaomialbumsyncer.utils.throwIfNotSuccess
 import com.fasterxml.jackson.databind.ObjectMapper
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.babyfish.jimmer.sql.kt.KSqlClient
 import org.babyfish.jimmer.sql.kt.ast.expression.*
 import org.babyfish.jimmer.sql.kt.fetcher.newFetcher
@@ -198,9 +199,13 @@ class NotifyService(private val sql: KSqlClient) {
             }
             log.info("通知已发送, {}", logContext)
         } catch (e: Exception) {
-            log.error("发送通知失败, {}, url={}", logContext, url, e)
+            log.error("发送通知失败, {}, url={}", logContext, logUrl(url), e)
         }
     }
+
+    private fun logUrl(url: String): String = url.toHttpUrlOrNull()?.let {
+        it.newBuilder().query(null).fragment(null).build().toString()
+    } ?: "<invalid-url>"
 
     private fun renderTemplate(template: String, values: Map<String, String>): String {
         val isJson = template.trimStart().startsWith("{") || template.trimStart().startsWith("[")

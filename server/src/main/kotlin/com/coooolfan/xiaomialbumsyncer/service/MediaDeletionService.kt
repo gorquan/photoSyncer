@@ -10,7 +10,8 @@ import java.nio.file.Path
 
 internal fun mediaStorageRoot(): Path {
     val db = Path.of(System.getenv("APP_DB_PATH") ?: "./db/xiaomialbumsyncer.db").toAbsolutePath()
-    return System.getenv("PHOTO_SYNCER_MEDIA_ROOT")?.takeIf { it.isNotBlank() }?.let(Path::of) ?: db.parent.resolve("media")
+    return System.getenv("PHOTO_SYNCER_MEDIA_ROOT")?.takeIf { it.isNotBlank() }?.let(Path::of)
+        ?: (db.parent ?: Path.of(".")).resolve("media")
 }
 
 @Managed

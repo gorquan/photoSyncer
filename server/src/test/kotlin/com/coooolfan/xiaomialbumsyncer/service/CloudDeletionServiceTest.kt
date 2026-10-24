@@ -144,11 +144,11 @@ class CloudDeletionServiceTest {
         assertTrue(deletion.enabled(job))
         assertTrue(deletion.enabled(Crontab(job) { syncMode = CrontabSyncMode.TIMELINE }))
         assertTrue(deletion.deletedGroups(cursor).isEmpty())
-        assertThrows(com.coooolfan.xiaomialbumsyncer.exception.BadRequestException::class.java) { CrontabService(sql).validateSyncConfig(job.accountId, CrontabSyncMode.CURSOR, job.config) }
+        assertThrows(com.coooolfan.xiaomialbumsyncer.exception.BadRequestException::class.java) { CrontabService(sql).validateSyncConfig(job.accountId, job.albumIds, CrontabSyncMode.CURSOR, job.config) }
         assertTrue(MediaDeletionService(sql).cleanup(cursor, emptyList()).isEmpty())
-        CrontabService(sql).validateSyncConfig(job.accountId, CrontabSyncMode.CURSOR, job.config.copy(syncCloudDeletes = false))
+        CrontabService(sql).validateSyncConfig(job.accountId, job.albumIds, CrontabSyncMode.CURSOR, job.config.copy(syncCloudDeletes = false))
         for (mode in listOf(CrontabSyncMode.FULL, CrontabSyncMode.TIMELINE))
-            CrontabService(sql).validateSyncConfig(job.accountId, mode, job.config)
+            CrontabService(sql).validateSyncConfig(job.accountId, job.albumIds, mode, job.config)
     } }
 
     @Test fun clearingHistoryResetsMirrorBaseline() = withStore { store -> with(store) {

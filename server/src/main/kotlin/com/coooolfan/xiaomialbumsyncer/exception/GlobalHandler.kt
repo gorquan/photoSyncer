@@ -46,7 +46,7 @@ class GlobalHandler : Filter {
             log.error("未处理的服务端异常", e)
             ctx.status(500)
             ctx.returnValue(
-                Result.failure<Any>(500, e.message)
+                Result.failure<Any>(500, "服务器内部错误")
             )
         }
     }

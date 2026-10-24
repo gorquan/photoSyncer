@@ -12,13 +12,14 @@ import org.noear.solon.annotation.Inject
 @Configuration
 class SaToken {
 
+    @Inject(value = $$"${SA_TOKEN_NAME:XIAOMI-ALBUM-SYNCER}")
+    private lateinit var tokenName: String
+
     @Bean
-    // 避免 cookie 被跨端口共享
+    // Keep the cookie name stable across restarts. Operators running multiple
+    // instances on one host can set SA_TOKEN_NAME independently for each one.
     fun configSaToken(@Inject config: SaTokenConfig) {
-        val randomSuffix = (1..6)
-            .map { "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".random() }
-            .joinToString("")
-        config.tokenName = "XIAOMI-ALBUM-SYNCER-$randomSuffix"
+        config.tokenName = tokenName.trim().ifEmpty { "XIAOMI-ALBUM-SYNCER" }
     }
 
     @Bean

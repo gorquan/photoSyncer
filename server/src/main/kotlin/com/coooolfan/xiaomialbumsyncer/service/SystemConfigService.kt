@@ -16,12 +16,17 @@ import org.babyfish.jimmer.sql.kt.ast.expression.eq
 import org.noear.solon.annotation.Inject
 import org.noear.solon.annotation.Managed
 import java.security.MessageDigest
+import java.security.SecureRandom
+import java.util.HexFormat
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.PBEKeySpec
 
 @Managed
 class SystemConfigService(
     private val sql: KSqlClient,
     private val dataImporter: DataImporter,
 ) {
+    private val secureRandom = SecureRandom()
     // 避免一下循环依赖
     @Inject
     private lateinit var taskScheduler: TaskScheduler
@@ -34,6 +39,7 @@ class SystemConfigService(
 
     fun initConfig(create: SystemConfigInit) {
         if (isInit()) throw IllegalStateException("System is already initialized")
+        validatePassword(create.password)
 
         sql.saveCommand(SystemConfig {
             id = CONFIG_ID
@@ -55,13 +61,17 @@ class SystemConfigService(
     fun login(login: LoginRequest) {
         if (!isInit()) throw IllegalStateException("System is not initialized")
 
-        val lng = sql.executeQuery(SystemConfig::class) {
-            where(table.id eq CONFIG_ID)
-            where(table.password eq hashPwd(login.password))
-            selectCount()
-        }[0]
+        val stored = sql.findById(SystemConfig::class, CONFIG_ID)?.password
+        if (stored == null || !verifyPwd(login.password, stored)) throw AuthenticationException("Auth failed")
 
-        if (lng != 1.toLong()) throw AuthenticationException("Auth failed")
+        // Upgrade databases created by older releases after the first successful login.
+        if (!stored.startsWith(PBKDF2_PREFIX)) {
+            sql.executeUpdate(SystemConfig::class) {
+                set(table.password, hashPwd(login.password))
+                where(table.id eq CONFIG_ID)
+                where(table.password eq stored)
+            }
+        }
 
         StpUtil.login(0)
 
@@ -75,18 +85,48 @@ class SystemConfigService(
 
     fun updatePassword(update: SystemConfigPasswordUpdate) {
         if (!isInit()) throw IllegalStateException("System is not initialized")
+        validatePassword(update.password)
 
-        val rows = sql.executeUpdate(SystemConfig::class) {
+        val stored = sql.findById(SystemConfig::class, CONFIG_ID)?.password
+        if (stored == null || !verifyPwd(update.oldPassword, stored)) throw AuthenticationException("Auth failed")
+        sql.executeUpdate(SystemConfig::class) {
             set(table.password, hashPwd(update.password))
             where(table.id eq CONFIG_ID)
-            where(table.password eq hashPwd(update.oldPassword))
         }
-
-        if (rows != 1) throw AuthenticationException("Auth failed")
     }
 
 
     private fun hashPwd(password: String): String {
+        val salt = ByteArray(SALT_BYTES)
+        secureRandom.nextBytes(salt)
+        val derived = derive(password, salt, PBKDF2_ITERATIONS)
+        return "${PBKDF2_PREFIX}${PBKDF2_ITERATIONS}\$${HexFormat.of().formatHex(salt)}\$${HexFormat.of().formatHex(derived)}"
+    }
+
+    private fun validatePassword(password: String) {
+        if (password.isBlank()) throw com.coooolfan.xiaomialbumsyncer.exception.BadRequestException("密码不能为空")
+    }
+
+    private fun verifyPwd(password: String, stored: String): Boolean {
+        if (!stored.startsWith(PBKDF2_PREFIX)) {
+            return MessageDigest.isEqual(legacyHash(password).toByteArray(Charsets.US_ASCII), stored.toByteArray(Charsets.US_ASCII))
+        }
+        val parts = stored.split('$')
+        if (parts.size != 4 || parts[0] != "pbkdf2-sha256") return false
+        val iterations = parts[1].toIntOrNull() ?: return false
+        if (iterations !in MIN_PBKDF2_ITERATIONS..MAX_PBKDF2_ITERATIONS) return false
+        val salt = runCatching { HexFormat.of().parseHex(parts[2]) }.getOrNull() ?: return false
+        val expected = runCatching { HexFormat.of().parseHex(parts[3]) }.getOrNull() ?: return false
+        if (salt.size != SALT_BYTES || expected.size != DERIVED_KEY_BITS / 8) return false
+        return MessageDigest.isEqual(derive(password, salt, iterations), expected)
+    }
+
+    private fun derive(password: String, salt: ByteArray, iterations: Int): ByteArray =
+        SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+            .generateSecret(PBEKeySpec(password.toCharArray(), salt, iterations, DERIVED_KEY_BITS))
+            .encoded
+
+    private fun legacyHash(password: String): String {
         val unHashed = "djshfpiuwEGfiugeiugfpiugpiuiuf$password"
         val digest = MessageDigest.getInstance("SHA3-384")
         val hashBytes = digest.digest(unHashed.toByteArray(Charsets.UTF_8))
@@ -128,5 +168,11 @@ class SystemConfigService(
 
     companion object {
         const val CONFIG_ID = 0L
+        private const val PBKDF2_PREFIX = "pbkdf2-sha256$"
+        private const val PBKDF2_ITERATIONS = 210_000
+        private const val MIN_PBKDF2_ITERATIONS = 100_000
+        private const val MAX_PBKDF2_ITERATIONS = 1_000_000
+        private const val SALT_BYTES = 16
+        private const val DERIVED_KEY_BITS = 256
     }
 }

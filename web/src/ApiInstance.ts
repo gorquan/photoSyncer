@@ -30,7 +30,7 @@ export const api = new Api(async ({ uri, method, headers, body }) => {
   })
 
   // 401处理：排除获取token的接口，避免循环；并发的多次 401 只提示并跳转一次
-  if (response.status === 401 && !(uri.includes('/api/token') && method.includes('GET'))) {
+  if (response.status === 401 && !(uri === '/api/token' && method === 'POST')) {
     if (!unauthorizedHandled) {
       unauthorizedHandled = true
       document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT'

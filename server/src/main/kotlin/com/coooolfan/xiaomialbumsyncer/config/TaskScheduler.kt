@@ -113,9 +113,15 @@ class TaskScheduler(
     }
 
     private fun executeWithGuard(crontab: Crontab) {
-        if (!runningCrontabs.add(crontab.id)) {
-            log.warn("定时任务[${crontab.id}:${crontab.name}]正在运行中，跳过本次执行")
-            return
+        synchronized(this) {
+            if (sql.findById(Crontab::class, crontab.id) == null) {
+                log.info("定时任务[${crontab.id}:${crontab.name}]已删除，跳过执行")
+                return
+            }
+            if (!runningCrontabs.add(crontab.id)) {
+                log.warn("定时任务[${crontab.id}:${crontab.name}]正在运行中，跳过本次执行")
+                return
+            }
         }
         try {
             runBlocking(Dispatchers.IO) {

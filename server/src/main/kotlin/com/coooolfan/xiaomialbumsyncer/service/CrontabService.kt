@@ -28,18 +28,36 @@ class CrontabService(private val sql: KSqlClient) {
     private lateinit var taskScheduler: TaskScheduler
 
     fun createCrontab(input: CrontabCreateInput, fetcher: Fetcher<Crontab>): Crontab {
-        validateSyncConfig(input.accountId, input.syncMode, input.config)
+        validateSyncConfig(input.accountId, input.albumIds, input.syncMode, input.config)
         val execute = sql.saveCommand(input, SaveMode.INSERT_ONLY).execute(fetcher)
         taskScheduler.initJobs()
         return execute.modifiedEntity
     }
 
-    internal fun validateSyncConfig(accountId: Long, mode: CrontabSyncMode, config: CrontabConfig) {
+    internal fun validateSyncConfig(accountId: Long, albumIds: List<Long>, mode: CrontabSyncMode, config: CrontabConfig) {
+        validateAlbumSelection(accountId, albumIds)
+        val provider = sql.findById(ProviderAccount::class, accountId)?.provider
+            ?: throw BadRequestException("云服务账号不存在")
         if (config.syncCloudDeletes && mode == CrontabSyncMode.CURSOR &&
-            sql.findById(ProviderAccount::class, accountId)?.provider == CloudProvider.XIAOMI)
+            provider == CloudProvider.XIAOMI)
             throw BadRequestException("小米位点增量仅支持备份；镜像模式请选择全量或时间线同步")
-        require(mode != CrontabSyncMode.TIMELINE || sql.findById(ProviderAccount::class, accountId)?.provider != CloudProvider.ICLOUD) {
-            "iCloud 不支持时间线同步，请选择全量或位点增量"
+        if (mode == CrontabSyncMode.TIMELINE && provider == CloudProvider.ICLOUD) {
+            throw BadRequestException("iCloud 不支持时间线同步，请选择全量或位点增量")
+        }
+    }
+
+    private fun validateAlbumSelection(accountId: Long, albumIds: List<Long>) {
+        val distinctIds = albumIds.distinct()
+        if (distinctIds.isEmpty()) throw BadRequestException("至少选择一个相册")
+        if (distinctIds.size != albumIds.size) throw BadRequestException("相册不能重复选择")
+
+        val selected = sql.createQuery(Album::class) {
+            where(table.id valueIn distinctIds)
+            where(table.accountId eq accountId)
+            select(table.id)
+        }.execute().toSet()
+        if (selected.size != distinctIds.size) {
+            throw BadRequestException("只能选择当前云服务账号下的相册")
         }
     }
 
@@ -50,19 +68,45 @@ class CrontabService(private val sql: KSqlClient) {
     }
 
     fun deleteCrontab(id: Long) {
+        val scheduler = runCatching { taskScheduler }.getOrNull()
+        if (scheduler == null) {
+            deleteUnchecked(id, null)
+        } else synchronized(scheduler) {
+            deleteUnchecked(id, scheduler)
+        }
+        taskSchedulerOrNull()?.initJobs()
+    }
+
+    private fun deleteUnchecked(id: Long, scheduler: TaskScheduler?) {
+        if (scheduler?.checkIsRunning(id) == true) {
+            throw BadRequestException("计划任务正在运行，无法删除")
+        }
         sql.transaction {
             sql.executeDelete(MirrorInventory::class) { where(table.id eq id) }
             sql.executeDelete(Crontab::class) { where(table.id eq id) }
         }
-        taskScheduler.initJobs()
     }
 
     fun clearCrontabHistory(crontabId: Long) {
+        val scheduler = taskSchedulerOrNull()
+        if (scheduler == null) {
+            clearHistoryUnchecked(crontabId, null)
+        } else synchronized(scheduler) {
+            clearHistoryUnchecked(crontabId, scheduler)
+        }
+    }
+
+    private fun clearHistoryUnchecked(crontabId: Long, scheduler: TaskScheduler?) {
+        if (scheduler?.checkIsRunning(crontabId) == true) {
+            throw BadRequestException("计划任务正在运行，无法清理历史")
+        }
         sql.transaction {
             sql.executeDelete(MirrorInventory::class) { where(table.id eq crontabId) }
             sql.executeDelete(CrontabHistory::class) { where(table.crontabId eq crontabId) }
         }
     }
+
+    private fun taskSchedulerOrNull(): TaskScheduler? = runCatching { taskScheduler }.getOrNull()
 
     fun isCrontabRunning(crontabId: Long): Boolean = taskScheduler.checkIsRunning(crontabId)
 
@@ -135,13 +179,25 @@ class CrontabService(private val sql: KSqlClient) {
 
     fun updateCrontab(crontab: Crontab, fetcher: Fetcher<Crontab>): Crontab {
         val updated = sql.transaction {
-            val existing = sql.findById(Crontab::class, crontab.id) ?: throw IllegalArgumentException("定时任务不存在")
+            val existing = sql.findById(
+                newFetcher(Crontab::class).by {
+                    accountId()
+                    syncMode()
+                    config()
+                    albumIds()
+                },
+                crontab.id,
+            ) ?: throw IllegalArgumentException("定时任务不存在")
             if (ImmutableObjects.isLoaded(crontab, "syncMode") && crontab.syncMode != existing.syncMode)
                 throw BadRequestException("计划创建后不能修改扫描方式，请新建计划")
             val config = if (ImmutableObjects.isLoaded(crontab, "config")) crontab.config else existing.config
             if (config.syncCloudDeletes != existing.config.syncCloudDeletes)
                 throw BadRequestException("计划创建后不能切换备份／镜像模式，请新建计划")
-            validateSyncConfig(existing.accountId, existing.syncMode, config)
+            // albumIds is an id view backed by the albums association. Checking
+            // the id-view property itself can still call the unloaded association
+            // getter for a partial update.
+            val albumIds = if (ImmutableObjects.isLoaded(crontab, "albums")) crontab.albumIds else existing.albumIds
+            validateSyncConfig(existing.accountId, albumIds, existing.syncMode, config)
             sql.saveCommand(crontab, SaveMode.UPDATE_ONLY).execute(fetcher).modifiedEntity
         }
         taskScheduler.initJobs()
@@ -276,6 +332,8 @@ class CrontabService(private val sql: KSqlClient) {
         pageSize: Int,
         fetcher: Fetcher<CrontabHistoryDetail>
     ): Page<CrontabHistoryDetail> {
+        if (pageIndex < 0) throw BadRequestException("pageIndex 不能为负数")
+        if (pageSize !in 1..MAX_PAGE_SIZE) throw BadRequestException("pageSize 必须在 1 到 $MAX_PAGE_SIZE 之间")
         return sql.createQuery(CrontabHistoryDetail::class) {
             where(table.crontabHistoryId eq historyId)
             select(table.fetch(fetcher))
@@ -293,6 +351,8 @@ class CrontabService(private val sql: KSqlClient) {
         pageIndex: Int,
         pageSize: Int
     ): Page<CrontabHistoryGroup> {
+        if (pageIndex < 0) throw BadRequestException("pageIndex 不能为负数")
+        if (pageSize !in 1..MAX_PAGE_SIZE) throw BadRequestException("pageSize 必须在 1 到 $MAX_PAGE_SIZE 之间")
         // L1: id, startTime, endTime, detailsCount（@Transient 不是列，用 count 子查询代替）
         val src = baseTableSymbol {
             sql.createBaseQuery(CrontabHistory::class) {
@@ -382,6 +442,10 @@ class CrontabService(private val sql: KSqlClient) {
             page.totalRowCount,
             page.totalPageCount
         )
+    }
+
+    companion object {
+        private const val MAX_PAGE_SIZE = 200
     }
 
     fun updateDetailMessage(detailId: Long, message: String) {

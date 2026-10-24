@@ -38,8 +38,8 @@ class ApiE2eSuite {
         assertFalse(api.json(api.get("/api/system-config").expect(200)).path("init").asBoolean())
         api.post("/api/system-config", mapOf("password" to "e2e-password")).expect(200)
         api.post("/api/account/1/check-auth").expect(401)
-        api.get("/api/token?password=${api.encode("wrong-password")}").expect(401)
-        api.get("/api/token?password=${api.encode("e2e-password")}").expect(200)
+        api.post("/api/token", mapOf("password" to "wrong-password")).expect(401)
+        api.post("/api/token", mapOf("password" to "e2e-password")).expect(200)
 
         assertTrue(api.json(api.get("/api/system-config").expect(200)).path("init").asBoolean())
         api.get("/api/system-config/normal").expect(200)
@@ -206,7 +206,7 @@ class ApiE2eSuite {
         assertTrue(Files.isRegularFile(downloadedFile))
         assertFalse(Files.exists(migratedFile), "Photos exports retire only after cloud-original replacement is verified")
         assertEquals(cameraAssets.first().path("checksum").asText(), java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-1").digest(Files.readAllBytes(downloadedFile))))
-        assertEquals(downloadsBeforeMigration, mock.routeCount("/mock/download/101"), "unchanged Photos bytes must restore locally")
+        assertEquals(downloadsBeforeMigration + 1, mock.routeCount("/mock/download/101"), "EXIF-transformed Photos bytes must restore from the cloud")
 
         api.delete("/api/crontab/$crontabId/histories").expect(200)
         val historiesAfterClear = api.json(api.get("/api/crontab").expect(200))
@@ -861,7 +861,7 @@ class ApiE2eSuite {
             assertEquals(beforeFull, mock.routeCount("/gallery/album/full"))
             assertEquals(beforeTimeline + if (mode == "TIMELINE") 1 else 0, mock.routeCount("/gallery/user/timeline"))
             assertEquals(beforeCursor, mock.routeCount("/gallery/allitems"))
-            assertEquals(beforeGallery + if (mode == "FULL") 1 else 0, mock.routeCount("/gallery/user/galleries"))
+            assertEquals(beforeGallery + 1, mock.routeCount("/gallery/user/galleries"), "an unavailable timeline falls back to a complete album enumeration")
             assertEquals(beforeStorage, mock.routeCount("/gallery/storage"))
             assertTrue(Files.exists(export)); assertFalse(Files.exists(workDir.resolve("fallback/media/originals")))
             // Failure/deletion-only rows must not disappear into collapsed zero-asset histories.

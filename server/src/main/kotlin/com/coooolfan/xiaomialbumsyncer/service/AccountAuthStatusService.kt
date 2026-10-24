@@ -27,7 +27,9 @@ class AccountAuthStatusService(private val sql: KSqlClient) {
 
     fun <T> observeXiaomi(accountId: Long, action: () -> T): T {
         val account = sql.findById(ProviderAccount::class, accountId) ?: throw BadRequestException("账号不存在")
-        require(account.provider == CloudProvider.XIAOMI) { "该账号不是小米账号" }
+        if (account.provider != CloudProvider.XIAOMI) {
+            throw BadRequestException("该账号不是小米账号")
+        }
         val started = Instant.ofEpochMilli(System.currentTimeMillis())
         return try {
             action().also { record(account, AccountAuthState.READY, started) }
