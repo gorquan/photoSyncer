@@ -2,6 +2,7 @@ package com.coooolfan.xiaomialbumsyncer.config
 
 import com.coooolfan.xiaomialbumsyncer.controller.CrontabController.Companion.CRONTAB_WITH_ALBUMS_FETCHER
 import com.coooolfan.xiaomialbumsyncer.model.Crontab
+import com.coooolfan.xiaomialbumsyncer.model.CrontabHistory
 import com.coooolfan.xiaomialbumsyncer.model.SystemConfig
 import com.coooolfan.xiaomialbumsyncer.model.enabled
 import com.coooolfan.xiaomialbumsyncer.pipeline.CrontabPipeline
@@ -10,13 +11,15 @@ import com.coooolfan.xiaomialbumsyncer.service.SystemConfigService.Companion.CON
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.babyfish.jimmer.sql.kt.KSqlClient
-import org.babyfish.jimmer.sql.kt.ast.expression.eq
+import org.babyfish.jimmer.sql.kt.ast.expression.*
+import org.babyfish.jimmer.sql.ast.mutation.SaveMode
 import org.noear.solon.annotation.Init
 import org.noear.solon.annotation.Managed
 import org.noear.solon.scheduling.annotation.Scheduled
 import org.noear.solon.scheduling.scheduled.manager.IJobManager
 import org.slf4j.LoggerFactory
 import java.text.ParseException
+import java.time.Instant
 import java.util.*
 import java.util.concurrent.Executor
 
@@ -31,6 +34,7 @@ class TaskScheduler(
 
     private val log = LoggerFactory.getLogger(this.javaClass)
     private val runningCrontabs: MutableSet<Long> = Collections.synchronizedSet(mutableSetOf())
+    private var interruptedRunsRecovered = false
 
     /** 初始化并注册所有启用的定时任务
      * 该方法在应用启动时执行一次，也可以重复调用以重新载入所有任务
@@ -40,6 +44,7 @@ class TaskScheduler(
     @Init
     @Synchronized
     fun initJobs() {
+        recoverInterruptedRunsOnStartup()
         val crontabs = sql.executeQuery(Crontab::class) {
             where(table.enabled eq true)
             select(table.fetch(CRONTAB_WITH_ALBUMS_FETCHER))
@@ -94,6 +99,43 @@ class TaskScheduler(
                 throw e
         }
 
+    }
+
+    /**
+     * A process restart destroys the in-memory executor, while the history row
+     * may still have a null end time. Reclassify those rows once at startup so
+     * the UI cannot show a permanently running task and the next manual run can
+     * resume from the committed cursors and published files.
+     *
+     * initJobs() is also called after task edits, so this is deliberately
+     * guarded to run only during the first application initialization.
+     */
+    private fun recoverInterruptedRunsOnStartup() {
+        if (interruptedRunsRecovered) return
+
+        val interruptedIds = sql.executeQuery(CrontabHistory::class) {
+            select(table)
+        }.asSequence()
+            .filter { it.endTime == null }
+            .map { it.id }
+            .toList()
+        if (interruptedIds.isNotEmpty()) {
+            val endedAt = Instant.now()
+            sql.transaction {
+                interruptedIds.forEach { historyId ->
+                    sql.saveCommand(
+                        CrontabHistory {
+                            id = historyId
+                            endTime = endedAt
+                            executionStatus = "FAILED"
+                        },
+                        SaveMode.UPDATE_ONLY
+                    ).execute()
+                }
+            }
+            log.warn("应用启动时发现 {} 条未完成任务记录，已标记为中断失败；下次执行将从已提交进度继续", interruptedIds.size)
+        }
+        interruptedRunsRecovered = true
     }
 
     fun checkIsRunning(crontabId: Long): Boolean {
