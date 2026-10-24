@@ -236,6 +236,7 @@ export default {
       allResources: '全部资源',
       retryFailed: '重试失败资源',
       retryFailedHint: '从云端重新下载并覆盖失败资源的本地文件，不重新扫描全部相册。',
+      retryFailedLatestOnly: '只有最近一次执行记录可以重试失败资源。',
       failedOnlyHint: '当前显示本次执行失败或待重试的资源，共 {n} 条。',
       manualRefresh: '手动刷新',
       loadFailed: '加载执行明细失败',

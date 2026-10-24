@@ -240,6 +240,7 @@ const messages: typeof zh = {
       retryFailed: 'Retry failed resources',
       retryFailedHint:
         'Download failed resources from the cloud and overwrite them locally without rescanning the albums.',
+      retryFailedLatestOnly: 'Only the most recent execution can retry failed resources.',
       failedOnlyHint: 'Showing failed or retry-pending resources from this run: {n}.',
       manualRefresh: 'Refresh',
       loadFailed: 'Failed to load execution details',

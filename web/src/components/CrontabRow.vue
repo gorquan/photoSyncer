@@ -15,6 +15,10 @@ const { t, locale } = useI18n()
 
 type Crontab = CrontabDto['CrontabController/DEFAULT_CRONTAB']
 type CrontabHistory = Crontab['histories'][number]
+type HistoryDetailsRequest = {
+  history: CrontabHistory
+  canRetryFailed: boolean
+}
 
 const props = defineProps<{
   crontab: Crontab
@@ -29,7 +33,7 @@ const emit = defineEmits<{
   (e: 'toggle'): void
   (e: 'execute'): void
   (e: 'clearHistory'): void
-  (e: 'viewHistoryDetails', history: CrontabHistory): void
+  (e: 'viewHistoryDetails', request: HistoryDetailsRequest): void
   (e: 'refresh'): void
   (e: 'toggleExpand'): void
 }>()
@@ -197,14 +201,17 @@ watch(
 function openHistoryGroup(g: CrontabHistoryGroup) {
   if (g.runCount !== 1) return
   emit('viewHistoryDetails', {
-    id: g.historyId,
-    startTime: g.startTime,
-    endTime: g.endTime,
-    fetchedAllAssets: true,
-    isCompleted: g.endTime != null,
-    detailsCount: g.detailsCount,
-    executionStatus: g.executionStatus,
-    deletionReport: g.deletionReport,
+    history: {
+      id: g.historyId,
+      startTime: g.startTime,
+      endTime: g.endTime,
+      fetchedAllAssets: true,
+      isCompleted: g.endTime != null,
+      detailsCount: g.detailsCount,
+      executionStatus: g.executionStatus,
+      deletionReport: g.deletionReport,
+    },
+    canRetryFailed: g.historyId === lastHistory.value?.id,
   })
 }
 

@@ -23,11 +23,13 @@ const props = withDefaults(
     failedOnly: boolean
     loading?: boolean
     retrying?: boolean
+    canRetryFailed?: boolean
     error?: string | null
   }>(),
   {
     loading: false,
     retrying: false,
+    canRetryFailed: false,
     error: null,
   },
 )
@@ -211,7 +213,12 @@ const stepTagClass = '!whitespace-nowrap !text-[13px]'
               @click="emit('filter', false)"
             />
             <Button
-              v-if="failedOnly && totalRowCount > 0 && historyStatus.severity === 'warn'"
+              v-if="
+                canRetryFailed &&
+                failedOnly &&
+                totalRowCount > 0 &&
+                historyStatus.severity === 'warn'
+              "
               :label="t('schedule.details.retryFailed')"
               icon="pi pi-replay"
               size="small"
@@ -265,6 +272,18 @@ const stepTagClass = '!whitespace-nowrap !text-[13px]'
           <div v-for="result in history.deletionReport.results" :key="result.groupKey">
             <p v-for="message in result.conflicts" :key="message">{{ message }}</p>
           </div>
+        </div>
+
+        <div
+          v-if="
+            !canRetryFailed &&
+            failedOnly &&
+            totalRowCount > 0 &&
+            historyStatus.severity === 'warn'
+          "
+          class="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600 ring-1 ring-slate-200 dark:bg-slate-900/40 dark:text-slate-300 dark:ring-slate-700"
+        >
+          {{ t('schedule.details.retryFailedLatestOnly') }}
         </div>
 
         <div

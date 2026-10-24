@@ -222,6 +222,17 @@ class CrontabService(private val sql: KSqlClient) {
     fun retryFailedCrontabHistory(historyId: Long) {
         val history = sql.findById(CrontabHistory::class, historyId)
             ?: throw BadRequestException("执行历史不存在")
+        val crontabId = sql.createQuery(CrontabHistory::class) {
+            where(table.id eq historyId)
+            select(table.crontabId)
+        }.execute().single()
+        val latestHistoryId = sql.createQuery(CrontabHistory::class) {
+            where(table.crontabId eq crontabId)
+            orderBy(table.startTime.desc(), table.id.desc())
+            select(table.id)
+        }.limit(1).execute().firstOrNull()
+        if (latestHistoryId != historyId)
+            throw BadRequestException("只有最近一次执行历史可以重试失败资源")
         if (history.endTime == null)
             throw BadRequestException("任务仍在执行，暂时不能重试失败资源")
 
@@ -240,10 +251,6 @@ class CrontabService(private val sql: KSqlClient) {
         if (failedAssetIds.isEmpty())
             throw BadRequestException("这次执行没有可重试的失败资源")
 
-        val crontabId = sql.createQuery(CrontabHistory::class) {
-            where(table.id eq historyId)
-            select(table.crontabId)
-        }.execute().single()
         val crontab = sql.findById(CRONTAB_WITH_ALBUMS_FETCHER, crontabId)
             ?: throw BadRequestException("计划任务不存在")
         if (taskScheduler.checkIsRunning(crontab.id))
