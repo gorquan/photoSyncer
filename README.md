@@ -62,7 +62,43 @@ photoSyncer 是一个面向家庭 NAS 的照片和视频同步工具，支持小
 
 ## 快速部署
 
-### Docker Compose
+### Docker 镜像
+
+这是群晖或其他 Docker 主机最简单的部署方式。镜像已经包含前端和后端，不需要安装 Node.js、JDK 或拉取源码。
+
+先准备状态目录、日志目录和 Photos 目录。下面的路径与当前群晖部署保持一致；其他主机可以替换成自己的宿主机路径。
+
+```bash
+mkdir -p /volume3/docker/photoSyncer/db \
+         /volume3/docker/photoSyncer/logs \
+         /volume2/photo/photoSyncer
+
+docker pull ghcr.io/gorquan/photosyncer:latest
+
+docker run -d \
+  --name photosyncer \
+  --restart unless-stopped \
+  -p 8232:8080 \
+  -e TZ=Asia/Shanghai \
+  -e APP_DB_PATH=/app/db/xiaomialbumsyncer.db \
+  -e PHOTO_SYNCER_MEDIA_ROOT=/app/db/media \
+  -v /volume2/photo/photoSyncer:/photos \
+  -v /volume3/docker/photoSyncer/db:/app/db \
+  -v /volume3/docker/photoSyncer/logs:/app/logs \
+  ghcr.io/gorquan/photosyncer:latest
+```
+
+打开 `http://服务器IP:8232`，第一次运行时设置应用密码。这个密码只用于登录 photoSyncer，不等于小米、Apple 或 DSM 密码。
+
+更新到最新镜像时，保留三个挂载目录，只重建容器：
+
+```bash
+docker pull ghcr.io/gorquan/photosyncer:latest
+docker rm -f photosyncer 2>/dev/null || true
+# 再次执行上面的 docker run 命令
+```
+
+### Docker Compose（源码构建）
 
 需要 Git、Node.js 24.20+、JDK 25 和 Docker。
 
