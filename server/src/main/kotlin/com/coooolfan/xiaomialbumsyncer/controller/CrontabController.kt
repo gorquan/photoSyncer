@@ -194,6 +194,19 @@ class CrontabController(private val service: CrontabService) {
     }
 
     /**
+     * 只重试指定执行历史中的失败资源。
+     *
+     * 该接口不会重新扫描云端相册；失败资源会从云端重新下载并覆盖本地文件。
+     *
+     * @api POST /api/crontab/history/{id}/retry-failed
+     */
+    @Api
+    @Mapping("/history/{id}/retry-failed", method = [MethodType.POST])
+    fun retryFailedCrontabHistory(@Path id: Long) {
+        service.retryFailedCrontabHistory(id)
+    }
+
+    /**
      * 分页获取指定定时任务的执行历史（按连续 0 资产折叠）
      *
      * 连续的已完成且明细数为 0 的执行记录合并为一个分组返回，

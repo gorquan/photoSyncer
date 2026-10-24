@@ -22,10 +22,12 @@ const props = withDefaults(
     totalRowCount: number
     failedOnly: boolean
     loading?: boolean
+    retrying?: boolean
     error?: string | null
   }>(),
   {
     loading: false,
+    retrying: false,
     error: null,
   },
 )
@@ -35,6 +37,7 @@ const emit = defineEmits<{
   (e: 'page', payload: { pageIndex: number; pageSize: number }): void
   (e: 'filter', failedOnly: boolean): void
   (e: 'refresh'): void
+  (e: 'retry'): void
 }>()
 
 const visibleProxy = computed({
@@ -206,6 +209,17 @@ const stepTagClass = '!whitespace-nowrap !text-[13px]'
               :outlined="failedOnly"
               :loading="loading"
               @click="emit('filter', false)"
+            />
+            <Button
+              v-if="failedOnly && totalRowCount > 0 && historyStatus.severity === 'warn'"
+              :label="t('schedule.details.retryFailed')"
+              icon="pi pi-replay"
+              size="small"
+              severity="danger"
+              :loading="retrying"
+              :disabled="loading"
+              v-tooltip.bottom="t('schedule.details.retryFailedHint')"
+              @click="emit('retry')"
             />
             <Button
               v-if="historyStatus.severity === 'info'"

@@ -3,6 +3,7 @@ package com.coooolfan.xiaomialbumsyncer.pipeline
 import com.coooolfan.xiaomialbumsyncer.controller.SystemConfigController.Companion.NORMAL_SYSTEM_CONFIG
 import com.coooolfan.xiaomialbumsyncer.model.CloudDeletionReport
 import com.coooolfan.xiaomialbumsyncer.model.AlbumTimeline
+import com.coooolfan.xiaomialbumsyncer.model.Asset
 import com.coooolfan.xiaomialbumsyncer.model.Crontab
 import com.coooolfan.xiaomialbumsyncer.model.CrontabHistoryDetail
 import com.coooolfan.xiaomialbumsyncer.model.CrontabSyncMode
@@ -36,6 +37,7 @@ class CrontabPipeline(
     // 从 Crontab 创建一个任务
     suspend fun execute(
         crontab: Crontab,
+        retryAssetIds: Set<Long>? = null,
     ) {
         // 对资产的刷新操作作为独立步骤执行，不混入后续的并发流，避免状态管理复杂化
         val crontabHistory = crontabService.createCrontabHistory(crontab)
@@ -44,6 +46,7 @@ class CrontabPipeline(
         var deletionReport: CloudDeletionReport? = null
         var cleanupStarted = false
         try {
+            if (retryAssetIds == null) {
             val mirror = deletion.enabled(crontab)
             if (mirror) {
                 deletionReport = CloudDeletionReport("CHECKING")
@@ -86,6 +89,7 @@ class CrontabPipeline(
 
                 CrontabSyncMode.FULL -> assetService.refreshAssetsFull(crontab, crontabHistory)
             }
+            }
 
 
             if (deletionReport != null) {
@@ -105,8 +109,21 @@ class CrontabPipeline(
                 check(evidence.results.none { it.status == "FAILED" }) { "本地文件清理失败，详情见删除报告" }
             }
 
-            // 标记元数据枚举完成。
-            val plannedAssetCount = assetService.countAssetsForPublication(crontab)
+            // 标记元数据枚举完成。失败资源重试只处理指定资源组，不重新枚举云端。
+            val retryGroups = retryAssetIds?.let { ids ->
+                assetService.getAssetsForRetry(crontab, ids)
+                    .asSequence()
+                    .map { asset ->
+                        val groupKey = com.coooolfan.xiaomialbumsyncer.utils.MediaIdentity.of(asset).groupKey
+                        groupKey to assetService.publicationGroup(crontab, asset,
+                            acrossAlbums = false)
+                    }
+                    .filter { it.second.isNotEmpty() }
+                    .distinctBy { it.first + ":" + it.second.joinToString(",") { asset -> asset.id.toString() } }
+                    .toList()
+            }
+            val plannedAssetCount = retryGroups?.sumOf { it.second.size.toLong() }
+                ?: assetService.countAssetsForPublication(crontab)
             crontabService.finishCrontabHistoryFetchedAllAssets(crontabHistory, plannedAssetCount)
 
             val systemConfig = systemConfigService.getConfig(NORMAL_SYSTEM_CONFIG)
@@ -121,9 +138,7 @@ class CrontabPipeline(
                 add(crontab.config.verifiers)
                 if (crontab.config.synologyPhotos) add(crontab.config.exifProcessors)
             }.min().coerceIn(1, 512)
-            do {
-                currentCoroutineContext().ensureActive()
-                val assets = assetService.getAssetsUndownloadByCrontab(crontab, maxOf(crontab.config.fetchFromDbSize, groupWorkers).coerceIn(1, 512), lastId, reevaluatePublication = true)
+            suspend fun processAssets(assets: List<Asset>, forceDownload: Boolean): Pair<Int, Int> {
                 val completed = coroutineScope {
                     val semaphore = Semaphore(groupWorkers)
                     assets.map { asset ->
@@ -138,7 +153,7 @@ class CrontabPipeline(
                                 })
                                 try {
                                     publication.process(details, systemConfig,
-                                        legacyLayouts[groupKey])
+                                        legacyLayouts[groupKey], forceDownload = forceDownload)
                                     details.size to details.size
                                 } catch (failure: Exception) {
                                     currentCoroutineContext().ensureActive()
@@ -149,8 +164,19 @@ class CrontabPipeline(
                         }
                     }.awaitAll()
                 }
-                total += completed.sumOf { it.first }
-                success += completed.sumOf { it.second }
+                return completed.sumOf { it.first } to completed.sumOf { it.second }
+            }
+
+            if (retryGroups != null) {
+                val completed = processAssets(retryGroups.flatMap { it.second }, forceDownload = true)
+                total += completed.first
+                success += completed.second
+            } else do {
+                currentCoroutineContext().ensureActive()
+                val assets = assetService.getAssetsUndownloadByCrontab(crontab, maxOf(crontab.config.fetchFromDbSize, groupWorkers).coerceIn(1, 512), lastId, reevaluatePublication = true)
+                val completed = processAssets(assets, forceDownload = false)
+                total += completed.first
+                success += completed.second
                 if (assets.isNotEmpty()) lastId = assets.last().id
             } while (assets.isNotEmpty())
 

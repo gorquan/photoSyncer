@@ -14,7 +14,12 @@ class MediaPublicationService(private val sql: KSqlClient, private val media: Cl
     fun legacyLayouts(task: Crontab): Map<String, List<PublicationReceipt>> =
         MediaDeletion(mediaStorageRoot()).legacyLayouts(task.id, task.config.synologyPhotos)
 
-    fun process(details: List<CrontabHistoryDetail>, systemConfig: SystemConfig, legacyReceipts: List<PublicationReceipt>? = null) =
+    fun process(
+        details: List<CrontabHistoryDetail>,
+        systemConfig: SystemConfig,
+        legacyReceipts: List<PublicationReceipt>? = null,
+        forceDownload: Boolean = false,
+    ) =
         MediaFileLocks.group(MediaIdentity.of(details.first().asset).groupKey) {
             try {
                 requireCurrentPresence(details)
@@ -26,7 +31,7 @@ class MediaPublicationService(private val sql: KSqlClient, private val media: Cl
                 }
                 throw failure
             }
-            processLocked(details, systemConfig, legacyReceipts)
+            processLocked(details, systemConfig, legacyReceipts, forceDownload)
         }
 
     private fun requireCurrentPresence(details: List<CrontabHistoryDetail>) {
@@ -43,7 +48,12 @@ class MediaPublicationService(private val sql: KSqlClient, private val media: Cl
         require(present.all { it._2 }) { "来源版本已变化，取消旧版本发布，下次同步将重试" }
     }
 
-    private fun processLocked(details: List<CrontabHistoryDetail>, systemConfig: SystemConfig, legacyReceipts: List<PublicationReceipt>?) {
+    private fun processLocked(
+        details: List<CrontabHistoryDetail>,
+        systemConfig: SystemConfig,
+        legacyReceipts: List<PublicationReceipt>?,
+        forceDownload: Boolean,
+    ) {
         val task = details.first().crontabHistory.crontab
         val config = task.config
         val identity = MediaIdentity.of(details.first().asset)
@@ -66,6 +76,7 @@ class MediaPublicationService(private val sql: KSqlClient, private val media: Cl
                 MediaPublisher(root).publish(group, config.targetPath, fingerprint, members,
                     download = { asset, path -> media.download(task.accountId, asset, path) },
                     transform = { detail, path -> transformPublicationMedia(detail, path, systemConfig) },
+                    forceDownload = forceDownload,
                     evidence = { detail, output ->
                         sql.executeUpdate(CrontabHistoryDetail::class) {
                             set(table.downloadCompleted, true)

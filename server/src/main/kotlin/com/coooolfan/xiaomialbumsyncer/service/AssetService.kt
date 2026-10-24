@@ -423,6 +423,31 @@ class AssetService(private val sql: KSqlClient, private val api: XiaoMiApi, priv
         }.limit(pageSize).execute()
     }
 
+    /**
+     * Load only the current assets selected for a failed-resource retry.
+     * The retry path deliberately bypasses cloud enumeration; the caller has
+     * already identified the failed resource IDs from a completed history.
+     */
+    fun getAssetsForRetry(crontab: Crontab, assetIds: Set<Long>): List<Asset> {
+        if (assetIds.isEmpty()) return emptyList()
+        return sql.createQuery(Asset::class) {
+            where(table.id valueIn assetIds)
+            where(table.albumId valueIn crontab.albumIds)
+            if (!crontab.config.downloadImages) where(table.type ne AssetType.IMAGE)
+            val companion = table.logicalResourceKey like "%/resOriginalVidCompl"
+            if (!crontab.config.downloadVideos) {
+                if (crontab.config.downloadLivePhotos && crontab.config.downloadImages) where(or(table.type ne AssetType.VIDEO, companion))
+                else where(table.type ne AssetType.VIDEO)
+            }
+            if (!crontab.config.downloadLivePhotos || !crontab.config.downloadImages) where(companion.not())
+            where(table.type ne AssetType.AUDIO)
+            select(table.fetchBy {
+                allScalarFields()
+                album { allScalarFields(); account { provider() } }
+            })
+        }.execute()
+    }
+
 
     fun countAssetsForPublication(crontab: Crontab): Long = sql.createQuery(Asset::class) {
         filterCrontabAssets(crontab, 0, reevaluatePublication = true)

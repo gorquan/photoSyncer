@@ -237,6 +237,9 @@ const messages: typeof zh = {
       pageSize: 'Per page: {n}',
       failedOnly: 'Failures only',
       allResources: 'All resources',
+      retryFailed: 'Retry failed resources',
+      retryFailedHint:
+        'Download failed resources from the cloud and overwrite them locally without rescanning the albums.',
       failedOnlyHint: 'Showing failed or retry-pending resources from this run: {n}.',
       manualRefresh: 'Refresh',
       loadFailed: 'Failed to load execution details',
@@ -288,6 +291,10 @@ const messages: typeof zh = {
       deleteFailed: 'Delete failed',
       triggered: 'Triggered',
       triggerFailed: 'Trigger failed',
+      retryTriggered: 'Failed-resource retry triggered',
+      retryTriggeredDetail:
+        'Failed resources will be downloaded again from the cloud and overwrite local files.',
+      retryFailed: 'Failed to retry resources',
       historyCleared: 'History cleared',
       clearFailed: 'Clear failed',
     },

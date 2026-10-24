@@ -145,16 +145,17 @@ class TaskScheduler(
     /** 立即执行某个定时任务
      * @param crontab 要执行的定时任务实体
      * @param async 是否异步执行，默认 true。若为 false，则在当前线程中执行该任务，阻塞，直到任务完成才返回
+     * @param retryAssetIds 仅重试指定失败资源；非空时跳过云端枚举
      */
-    fun executeCrontab(crontab: Crontab, async: Boolean = true) {
+    fun executeCrontab(crontab: Crontab, async: Boolean = true, retryAssetIds: Set<Long>? = null) {
         if (async) {
-            thread.execute { executeWithGuard(crontab) }
+            thread.execute { executeWithGuard(crontab, retryAssetIds) }
         } else {
-            executeWithGuard(crontab)
+            executeWithGuard(crontab, retryAssetIds)
         }
     }
 
-    private fun executeWithGuard(crontab: Crontab) {
+    private fun executeWithGuard(crontab: Crontab, retryAssetIds: Set<Long>? = null) {
         synchronized(this) {
             if (sql.findById(Crontab::class, crontab.id) == null) {
                 log.info("定时任务[${crontab.id}:${crontab.name}]已删除，跳过执行")
@@ -167,7 +168,7 @@ class TaskScheduler(
         }
         try {
             runBlocking(Dispatchers.IO) {
-                pipeline.execute(crontab)
+                pipeline.execute(crontab, retryAssetIds)
             }
         } finally {
             runningCrontabs.remove(crontab.id)

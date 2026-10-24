@@ -38,10 +38,11 @@ class MediaPublisher(private val root: Path) {
         validationFailure: (CrontabHistoryDetail, Exception) -> Unit = { _, _ -> },
         beforeCommit: () -> Unit = {},
         localReceipts: List<PublicationReceipt> = emptyList(),
+        forceDownload: Boolean = false,
     ): PublicationReceipt {
         require(details.isNotEmpty())
         return MediaFileLocks.group(MediaIdentity.of(details.first().asset).groupKey) {
-            publishLocked(group, layout, fingerprint, details, download, transform, evidence, validationFailure, beforeCommit, localReceipts)
+            publishLocked(group, layout, fingerprint, details, download, transform, evidence, validationFailure, beforeCommit, localReceipts, forceDownload)
         }
     }
 
@@ -52,6 +53,7 @@ class MediaPublisher(private val root: Path) {
         validationFailure: (CrontabHistoryDetail, Exception) -> Unit,
         beforeCommit: () -> Unit,
         localReceipts: List<PublicationReceipt>,
+        forceDownload: Boolean,
     ): PublicationReceipt {
         require(details.isNotEmpty())
         val absoluteRoot = canonical(root)
@@ -70,7 +72,7 @@ class MediaPublisher(private val root: Path) {
         val receiptPath = absoluteRoot.resolve("receipts/${hash(group + layout)}.json")
         val previous = read<PublicationReceipt>(receiptPath)?.takeIf { it.group == group && it.layout == layout && it.version == VERSION }
         // Existence alone is never sufficient. Check final bytes on every run, even for completed history.
-        if (config.skipExistingFile && previous?.complete == true && previous.fingerprint == fingerprint &&
+        if (!forceDownload && config.skipExistingFile && previous?.complete == true && previous.fingerprint == fingerprint &&
             previous.outputs.size == details.size && previous.outputs.all {
                 matches(Path.of(it.path), it.outputSha256)
             }) {
@@ -88,7 +90,7 @@ class MediaPublisher(private val root: Path) {
                 val identity = MediaIdentity.of(asset)
                 val source = mapper.writeValueAsString(listOf(identity.resourceKey, asset.checksum, asset.size, asset.mimeType))
                 val copy = work.resolve("export-$index.${Path.of(detail.filePath).fileName.toString().substringAfterLast('.', "bin")}")
-                val local = prepareLocalOriginal(detail, source, copy, localReceipts)
+                val local = if (forceDownload) null else prepareLocalOriginal(detail, source, copy, localReceipts)
                 val (digest, status, motion) = local ?: run {
                     require(download(asset, copy)) { "云端原件暂不可用，资源组尚未发布" }
                     validateOriginal(detail, copy, validationFailure)
