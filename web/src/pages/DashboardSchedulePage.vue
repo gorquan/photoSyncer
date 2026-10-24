@@ -159,8 +159,17 @@ const historyDetailRows = ref<ReadonlyArray<CrontabHistoryDetail>>([])
 const historyDetailsPageIndex = ref(0)
 const historyDetailsPageSize = ref(10)
 const historyDetailsTotalRowCount = ref(0)
+const historyDetailsFailedOnly = ref(false)
 const historyDetailsLoading = ref(false)
 const historyDetailsError = ref<string | null>(null)
+
+function shouldShowFailedHistory(history: CrontabHistory) {
+  return (
+    history.executionStatus === 'FAILED' ||
+    history.executionStatus === 'PARTIAL' ||
+    history.executionStatus === 'CANCELLED'
+  )
+}
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message
@@ -192,6 +201,7 @@ async function loadHistoryDetails() {
       id: historyId,
       pageIndex: historyDetailsPageIndex.value,
       pageSize: historyDetailsPageSize.value,
+      failedOnly: historyDetailsFailedOnly.value,
     })
     historyDetailRows.value = page.rows
     historyDetailsTotalRowCount.value = page.totalRowCount
@@ -207,6 +217,7 @@ async function loadHistoryDetails() {
 async function openHistoryDetails(history: CrontabHistory) {
   selectedHistory.value = history
   historyDetailsPageIndex.value = 0
+  historyDetailsFailedOnly.value = shouldShowFailedHistory(history)
   historyDetailsError.value = null
   historyDetailRows.value = []
   historyDetailsTotalRowCount.value = 0
@@ -217,6 +228,12 @@ async function openHistoryDetails(history: CrontabHistory) {
 async function handleHistoryDetailsPage(payload: { pageIndex: number; pageSize: number }) {
   historyDetailsPageIndex.value = payload.pageIndex
   historyDetailsPageSize.value = payload.pageSize
+  await loadHistoryDetails()
+}
+
+async function handleHistoryDetailsFilter(failedOnly: boolean) {
+  historyDetailsFailedOnly.value = failedOnly
+  historyDetailsPageIndex.value = 0
   await loadHistoryDetails()
 }
 
@@ -383,9 +400,11 @@ watch(showHistoryDetailsDialog, (visible) => {
       :page-index="historyDetailsPageIndex"
       :page-size="historyDetailsPageSize"
       :total-row-count="historyDetailsTotalRowCount"
+      :failed-only="historyDetailsFailedOnly"
       :loading="historyDetailsLoading"
       :error="historyDetailsError"
       @page="handleHistoryDetailsPage"
+      @filter="handleHistoryDetailsFilter"
       @refresh="refreshHistoryDetails"
     />
   </div>

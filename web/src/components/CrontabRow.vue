@@ -273,10 +273,26 @@ function openMoreMenu(event: MouseEvent) {
 
 const currentStats = ref<CrontabCurrentStats | null>(null)
 const polling = ref(false)
-const lastFetchTime = ref(0)
 const now = ref(Date.now())
 let pollTimer: number | undefined
 let nowTimer: number | undefined
+
+// Running statistics are refreshed every second, but the run start time must
+// remain stable. Prefer the unfinished history record written for this run;
+// the latest history is a safe fallback while that record is being persisted.
+const runningStartTime = computed(() => {
+  if (!props.crontab.running) return undefined
+  const runningHistory = (props.crontab.histories || []).find((history) => !history.endTime)
+  return runningHistory?.startTime || lastHistory.value?.startTime
+})
+
+function formatElapsed(startTime?: string) {
+  if (!startTime) return ''
+  const start = new Date(startTime).getTime()
+  if (Number.isNaN(start)) return ''
+  const seconds = Math.floor(Math.max(0, now.value - start) / 1000)
+  return t('schedule.row.elapsed', { n: seconds })
+}
 
 async function fetchStats() {
   if (!props.crontab.id) return
@@ -287,9 +303,7 @@ async function fetchStats() {
     if (!currentStats.value.ts) {
       emit('refresh')
     }
-    const fetchedAt = Date.now()
-    now.value = fetchedAt
-    lastFetchTime.value = fetchedAt
+    now.value = Date.now()
   } catch (e: unknown) {
     console.debug('Failed to fetch stats', e)
     const msg = e instanceof Error ? e.message : String(e)
@@ -321,7 +335,6 @@ function stopPolling() {
     nowTimer = undefined
   }
   currentStats.value = null
-  lastFetchTime.value = 0
 }
 
 function getPercent(val?: number) {
@@ -514,7 +527,7 @@ onUnmounted(() => {
       >
         <template v-if="lastRunStatus">
           <span class="h-1.5 w-1.5 rounded-full" :class="lastRunStatus.dot" />
-          {{ formatRelative(lastHistory?.endTime || lastHistory?.startTime) }}
+          {{ formatRelative(lastHistory?.startTime) }}
         </template>
         <template v-else>{{ t('schedule.row.neverRun') }}</template>
       </span>
@@ -625,17 +638,15 @@ onUnmounted(() => {
               <div class="flex flex-col items-end">
                 <span
                   class="font-mono text-[13px] text-blue-600/70 dark:text-blue-300/80"
-                  :title="t('schedule.row.statsFetchedAt')"
+                  :title="t('schedule.row.startedAt')"
                   >{{
-                    currentStats?.ts ? new Date(currentStats.ts).toLocaleTimeString(locale) : ''
+                    runningStartTime
+                      ? t('schedule.row.startedAt', { time: formatTime(runningStartTime) })
+                      : ''
                   }}</span
                 >
-                <span v-if="lastFetchTime" class="font-mono text-[13px] text-blue-500/80">
-                  {{
-                    t('schedule.row.statsAge', {
-                      n: (Math.max(0, now - lastFetchTime) / 1000).toFixed(1),
-                    })
-                  }}
+                <span v-if="runningStartTime" class="font-mono text-[13px] text-blue-500/80">
+                  {{ formatElapsed(runningStartTime) }}
                 </span>
               </div>
             </div>

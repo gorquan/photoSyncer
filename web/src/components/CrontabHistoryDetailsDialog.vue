@@ -20,6 +20,7 @@ const props = withDefaults(
     pageIndex: number
     pageSize: number
     totalRowCount: number
+    failedOnly: boolean
     loading?: boolean
     error?: string | null
   }>(),
@@ -32,6 +33,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void
   (e: 'page', payload: { pageIndex: number; pageSize: number }): void
+  (e: 'filter', failedOnly: boolean): void
   (e: 'refresh'): void
 }>()
 
@@ -186,15 +188,42 @@ const stepTagClass = '!whitespace-nowrap !text-[13px]'
             </div>
           </div>
 
-          <Button
-            v-if="historyStatus.severity === 'info'"
-            :label="t('schedule.details.manualRefresh')"
-            icon="pi pi-refresh"
-            size="small"
-            severity="secondary"
-            :loading="loading"
-            @click="emit('refresh')"
-          />
+          <div class="flex flex-wrap items-center gap-2">
+            <Button
+              :label="t('schedule.details.failedOnly')"
+              icon="pi pi-exclamation-triangle"
+              size="small"
+              :severity="failedOnly ? 'danger' : 'secondary'"
+              :outlined="!failedOnly"
+              :loading="loading"
+              @click="emit('filter', true)"
+            />
+            <Button
+              :label="t('schedule.details.allResources')"
+              icon="pi pi-list"
+              size="small"
+              :severity="!failedOnly ? 'secondary' : 'contrast'"
+              :outlined="failedOnly"
+              :loading="loading"
+              @click="emit('filter', false)"
+            />
+            <Button
+              v-if="historyStatus.severity === 'info'"
+              :label="t('schedule.details.manualRefresh')"
+              icon="pi pi-refresh"
+              size="small"
+              severity="secondary"
+              :loading="loading"
+              @click="emit('refresh')"
+            />
+          </div>
+        </div>
+
+        <div
+          v-if="failedOnly"
+          class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 ring-1 ring-amber-200 dark:bg-amber-950/30 dark:text-amber-200 dark:ring-amber-900/60"
+        >
+          {{ t('schedule.details.failedOnlyHint', { n: totalRowCount }) }}
         </div>
 
         <div

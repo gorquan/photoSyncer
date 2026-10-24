@@ -121,6 +121,7 @@ export class CrontabController {
      * - id 定时任务执行历史 ID，用于指定要查询的那次执行记录
      * - pageIndex 页码参数，作为接口入参保留
      * - pageSize 分页大小参数，作为接口入参保留
+     * - failedOnly 是否只返回失败资源
      * @return Page<CrontabHistoryDetail> 返回该次执行历史对应的明细分页数据
      * 
      */
@@ -142,6 +143,13 @@ export class CrontabController {
         _uri += 'pageSize='
         _uri += encodeURIComponent(_value);
         _separator = '&';
+        if (options.failedOnly !== undefined) {
+            _value = options.failedOnly;
+            _uri += _separator
+            _uri += 'failedOnly='
+            _uri += encodeURIComponent(_value);
+            _separator = '&';
+        }
         return (await this.executor({uri: _uri, method: 'GET'})) as Promise<Page<CrontabHistoryDetailDto['CrontabController/CRONTAB_HISTORY_DETAIL_FETCHER']>>;
     }
     
@@ -270,6 +278,10 @@ export type CrontabControllerOptions = {
          * 分页大小参数，作为接口入参保留
          */
         readonly pageSize: number
+        /**
+         * 是否只返回失败资源
+         */
+        readonly failedOnly?: boolean
     }, 
     'listCrontabHistoryGroups': {
         /**

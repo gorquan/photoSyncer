@@ -169,6 +169,7 @@ class CrontabController(private val service: CrontabService) {
      * @param id 定时任务执行历史 ID，用于指定要查询的那次执行记录
      * @param pageIndex 页码参数，作为接口入参保留
      * @param pageSize 分页大小参数，作为接口入参保留
+     * @param failedOnly 是否只返回失败或待重试的资源
      * @return Page<CrontabHistoryDetail> 返回该次执行历史对应的明细分页数据
      *
      * @api GET /api/crontab/history/{id}/details
@@ -180,9 +181,16 @@ class CrontabController(private val service: CrontabService) {
     fun listCrontabHistoryDetails(
         @Path id: Long,
         @Param pageIndex: Int?,
-        @Param pageSize: Int?
+        @Param pageSize: Int?,
+        @Param failedOnly: Boolean?
     ): Page<@FetchBy("CRONTAB_HISTORY_DETAIL_FETCHER") CrontabHistoryDetail> {
-        return service.listCrontabHistoryDetails(id, pageIndex ?: 0, pageSize ?: 10, CRONTAB_HISTORY_DETAIL_FETCHER)
+        return service.listCrontabHistoryDetails(
+            id,
+            pageIndex ?: 0,
+            pageSize ?: 10,
+            CRONTAB_HISTORY_DETAIL_FETCHER,
+            failedOnly == true,
+        )
     }
 
     /**

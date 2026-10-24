@@ -330,12 +330,23 @@ class CrontabService(private val sql: KSqlClient) {
         historyId: Long,
         pageIndex: Int,
         pageSize: Int,
-        fetcher: Fetcher<CrontabHistoryDetail>
+        fetcher: Fetcher<CrontabHistoryDetail>,
+        failedOnly: Boolean = false,
     ): Page<CrontabHistoryDetail> {
         if (pageIndex < 0) throw BadRequestException("pageIndex 不能为负数")
         if (pageSize !in 1..MAX_PAGE_SIZE) throw BadRequestException("pageSize 必须在 1 到 $MAX_PAGE_SIZE 之间")
         return sql.createQuery(CrontabHistoryDetail::class) {
             where(table.crontabHistoryId eq historyId)
+            if (failedOnly) {
+                where(
+                    or(
+                        table.publicationStatus eq "FAILED",
+                        table.verificationStatus eq VerificationStatus.FAILED,
+                        and(table.downloadCompleted eq false, table.message.isNotNull()),
+                    )
+                )
+            }
+            orderBy(table.id.asc())
             select(table.fetch(fetcher))
         }.fetchPage(pageIndex, pageSize)
     }
