@@ -281,6 +281,27 @@ class MediaPublisherTest {
         assertArrayEquals(mov, Files.readAllBytes(Path.of(pair[1].filePath)))
     }
 
+    @Test fun forcedRetryDownloadsFromCloudAndOverwritesExistingOutput() {
+        val input = detail()
+        var downloads = 0
+        val download: (Asset, Path) -> Boolean = { _, path ->
+            downloads++
+            Files.write(path, jpeg)
+            true
+        }
+        publish(listOf(input), download = download)
+        Files.write(Path.of(input.filePath), ByteArray(jpeg.size))
+
+        MediaPublisher(directory.resolve("archive")).publish(
+            "group", directory.resolve("out").toString(), "v1", listOf(input),
+            download, { _, _ -> }, forceDownload = true,
+        )
+
+        assertEquals(2, downloads)
+        assertArrayEquals(jpeg, Files.readAllBytes(Path.of(input.filePath)))
+        assertNoRetainedMedia()
+    }
+
     @Test fun missingRequiredCompanionLeavesNoPrimaryOrRetainedDownloadAndRetryDownloadsBoth() {
         val pair = listOf(detail(), detail("resOriginalVidCompl"))
         assertThrows(IllegalArgumentException::class.java) { publish(pair, download = { asset, path -> if (asset.type == AssetType.VIDEO) false else { Files.write(path, jpeg); true } }) }

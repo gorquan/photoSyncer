@@ -65,7 +65,13 @@ jobs:
 
       - name: Prepare Docker build context
         run: |
-          JAR_FILE="$(find server/build/libs -maxdepth 1 -type f -name '*.jar' ! -name '*-plain.jar' | head -n 1)"
+          # Solon 3.x may emit only the plain runtime jar. Prefer the
+          # repackaged jar when available, but accept the plain jar as the
+          # application image entrypoint as well.
+          JAR_FILE="$(find server/build -type f -name '*.jar' ! -path '*/buildSrc/*' ! -name '*-plain.jar' | head -n 1)"
+          if [ -z "${JAR_FILE}" ]; then
+            JAR_FILE="$(find server/build -type f -name '*-plain.jar' ! -path '*/buildSrc/*' | head -n 1)"
+          fi
           test -n "${JAR_FILE}"
           cp "${JAR_FILE}" docker/app.jar
 

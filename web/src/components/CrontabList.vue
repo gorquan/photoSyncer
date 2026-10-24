@@ -9,6 +9,10 @@ const { t } = useI18n()
 
 type Crontab = CrontabDto['CrontabController/DEFAULT_CRONTAB']
 type CrontabHistory = Crontab['histories'][number]
+type HistoryDetailsRequest = {
+  history: CrontabHistory
+  canRetryFailed: boolean
+}
 
 const props = defineProps<{
   crontabs?: ReadonlyArray<Crontab>
@@ -37,7 +41,7 @@ const emit = defineEmits<{
   (e: 'toggle', item: Crontab): void
   (e: 'execute', item: Crontab): void
   (e: 'clearHistory', item: Crontab): void
-  (e: 'viewHistoryDetails', history: CrontabHistory): void
+  (e: 'viewHistoryDetails', request: HistoryDetailsRequest): void
 }>()
 </script>
 

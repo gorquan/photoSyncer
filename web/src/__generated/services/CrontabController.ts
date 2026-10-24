@@ -152,6 +152,21 @@ export class CrontabController {
         }
         return (await this.executor({uri: _uri, method: 'GET'})) as Promise<Page<CrontabHistoryDetailDto['CrontabController/CRONTAB_HISTORY_DETAIL_FETCHER']>>;
     }
+
+    /**
+     * 只重试指定执行历史中的失败资源。
+     *
+     * 该接口不会重新扫描云端相册；失败资源会从云端重新下载并覆盖本地文件。
+     *
+     */
+    readonly retryFailedCrontabHistory: (options: CrontabControllerOptions['retryFailedCrontabHistory']) => Promise<
+        void
+    > = async(options) => {
+        let _uri = '/api/crontab/history/';
+        _uri += encodeURIComponent(options.id);
+        _uri += '/retry-failed';
+        return (await this.executor({uri: _uri, method: 'POST'})) as Promise<void>;
+    }
     
     /**
      * 分页获取指定定时任务的执行历史（按连续 0 资产折叠）
@@ -231,7 +246,7 @@ export type CrontabControllerOptions = {
          * 定时任务输入参数，包含任务的配置信息
          */
         readonly body: CrontabCreateInput
-    }, 
+    },
     'updateCrontab': {
         /**
          * 定时任务输入参数，包含要更新的配置信息
@@ -283,6 +298,12 @@ export type CrontabControllerOptions = {
          */
         readonly failedOnly?: boolean
     }, 
+    'retryFailedCrontabHistory': {
+        /**
+         * 执行历史 ID
+         */
+        readonly id: number
+    },
     'listCrontabHistoryGroups': {
         /**
          * 定时任务ID

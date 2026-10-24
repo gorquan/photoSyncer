@@ -31,6 +31,10 @@ const preferencesStore = usePreferencesStore()
 type CrontabHistory = CrontabDto['CrontabController/DEFAULT_CRONTAB']['histories'][number]
 type CrontabHistoryDetail =
   CrontabHistoryDetailDto['CrontabController/CRONTAB_HISTORY_DETAIL_FETCHER']
+type HistoryDetailsRequest = {
+  history: CrontabHistory
+  canRetryFailed: boolean
+}
 
 const { accounts } = storeToRefs(accountsStore)
 const { albums, loaded: albumsLoaded } = storeToRefs(albumsStore)
@@ -161,6 +165,8 @@ const historyDetailsPageSize = ref(10)
 const historyDetailsTotalRowCount = ref(0)
 const historyDetailsFailedOnly = ref(false)
 const historyDetailsLoading = ref(false)
+const retryingFailedHistory = ref(false)
+const canRetryFailedHistory = ref(false)
 const historyDetailsError = ref<string | null>(null)
 
 function shouldShowFailedHistory(history: CrontabHistory) {
@@ -214,10 +220,11 @@ async function loadHistoryDetails() {
   }
 }
 
-async function openHistoryDetails(history: CrontabHistory) {
-  selectedHistory.value = history
+async function openHistoryDetails(request: HistoryDetailsRequest) {
+  selectedHistory.value = request.history
+  canRetryFailedHistory.value = request.canRetryFailed
   historyDetailsPageIndex.value = 0
-  historyDetailsFailedOnly.value = shouldShowFailedHistory(history)
+  historyDetailsFailedOnly.value = shouldShowFailedHistory(request.history)
   historyDetailsError.value = null
   historyDetailRows.value = []
   historyDetailsTotalRowCount.value = 0
@@ -239,6 +246,32 @@ async function handleHistoryDetailsFilter(failedOnly: boolean) {
 
 async function refreshHistoryDetails() {
   await loadHistoryDetails()
+}
+
+async function retryFailedHistory() {
+  const historyId = selectedHistory.value?.id
+  if (historyId === null || historyId === undefined) return
+  retryingFailedHistory.value = true
+  try {
+    await crontabsStore.retryFailedCrontabHistory(historyId)
+    toast.add({
+      severity: 'success',
+      summary: t('schedule.toast.retryTriggered'),
+      detail: t('schedule.toast.retryTriggeredDetail'),
+      life: 2400,
+    })
+    showHistoryDetailsDialog.value = false
+    await fetchCrontabs()
+  } catch (error) {
+    toast.add({
+      severity: 'error',
+      summary: t('schedule.toast.retryFailed'),
+      detail: getErrorMessage(error),
+      life: 2600,
+    })
+  } finally {
+    retryingFailedHistory.value = false
+  }
 }
 
 onMounted(async () => {
@@ -402,10 +435,13 @@ watch(showHistoryDetailsDialog, (visible) => {
       :total-row-count="historyDetailsTotalRowCount"
       :failed-only="historyDetailsFailedOnly"
       :loading="historyDetailsLoading"
+      :retrying="retryingFailedHistory"
+      :can-retry-failed="canRetryFailedHistory"
       :error="historyDetailsError"
       @page="handleHistoryDetailsPage"
       @filter="handleHistoryDetailsFilter"
       @refresh="refreshHistoryDetails"
+      @retry="retryFailedHistory"
     />
   </div>
 </template>

@@ -60,6 +60,10 @@ export const useCrontabsStore = defineStore('crontabs', () => {
     await api.crontabController.clearCrontabHistory({ crontabId })
   }
 
+  async function retryFailedCrontabHistory(historyId: number) {
+    return api.crontabController.retryFailedCrontabHistory({ id: historyId })
+  }
+
   function reset() {
     crontabs.value = []
     loaded.value = false
@@ -78,6 +82,7 @@ export const useCrontabsStore = defineStore('crontabs', () => {
     deleteCrontab,
     executeCrontab,
     clearCrontabHistory,
+    retryFailedCrontabHistory,
     reset,
   }
 })

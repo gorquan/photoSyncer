@@ -5814,6 +5814,9 @@
       "type": "com.coooolfan.xiaomialbumsyncer.pipeline.CrontabPipeline$execute$10"
     },
     {
+      "type": "com.coooolfan.xiaomialbumsyncer.pipeline.CrontabPipeline$execute$13"
+    },
+    {
       "type": "com.coooolfan.xiaomialbumsyncer.pipeline.CrontabPipeline$execute$15"
     },
     {
@@ -5881,6 +5884,15 @@
     },
     {
       "type": "com.coooolfan.xiaomialbumsyncer.pipeline.CrontabPipeline$execute$pipeline$3"
+    },
+    {
+      "type": "com.coooolfan.xiaomialbumsyncer.pipeline.CrontabPipeline$execute$processAssets$1"
+    },
+    {
+      "type": "com.coooolfan.xiaomialbumsyncer.pipeline.CrontabPipeline$execute$processAssets$completed$1"
+    },
+    {
+      "type": "com.coooolfan.xiaomialbumsyncer.pipeline.CrontabPipeline$execute$processAssets$completed$1$1$1"
     },
     {
       "type": "com.coooolfan.xiaomialbumsyncer.pipeline.CrontabPipeline$processStage$$inlined$transform$1"

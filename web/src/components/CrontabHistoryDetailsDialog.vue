@@ -22,10 +22,14 @@ const props = withDefaults(
     totalRowCount: number
     failedOnly: boolean
     loading?: boolean
+    retrying?: boolean
+    canRetryFailed?: boolean
     error?: string | null
   }>(),
   {
     loading: false,
+    retrying: false,
+    canRetryFailed: false,
     error: null,
   },
 )
@@ -35,6 +39,7 @@ const emit = defineEmits<{
   (e: 'page', payload: { pageIndex: number; pageSize: number }): void
   (e: 'filter', failedOnly: boolean): void
   (e: 'refresh'): void
+  (e: 'retry'): void
 }>()
 
 const visibleProxy = computed({
@@ -208,6 +213,22 @@ const stepTagClass = '!whitespace-nowrap !text-[13px]'
               @click="emit('filter', false)"
             />
             <Button
+              v-if="
+                canRetryFailed &&
+                failedOnly &&
+                totalRowCount > 0 &&
+                historyStatus.severity === 'warn'
+              "
+              :label="t('schedule.details.retryFailed')"
+              icon="pi pi-replay"
+              size="small"
+              severity="danger"
+              :loading="retrying"
+              :disabled="loading"
+              v-tooltip.bottom="t('schedule.details.retryFailedHint')"
+              @click="emit('retry')"
+            />
+            <Button
               v-if="historyStatus.severity === 'info'"
               :label="t('schedule.details.manualRefresh')"
               icon="pi pi-refresh"
@@ -251,6 +272,18 @@ const stepTagClass = '!whitespace-nowrap !text-[13px]'
           <div v-for="result in history.deletionReport.results" :key="result.groupKey">
             <p v-for="message in result.conflicts" :key="message">{{ message }}</p>
           </div>
+        </div>
+
+        <div
+          v-if="
+            !canRetryFailed &&
+            failedOnly &&
+            totalRowCount > 0 &&
+            historyStatus.severity === 'warn'
+          "
+          class="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600 ring-1 ring-slate-200 dark:bg-slate-900/40 dark:text-slate-300 dark:ring-slate-700"
+        >
+          {{ t('schedule.details.retryFailedLatestOnly') }}
         </div>
 
         <div
