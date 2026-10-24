@@ -1,132 +1,114 @@
 # photoSyncer
 
-将小米云相册与 Apple iCloud Photos 的照片、视频同步到本地，支持定时增量下载和 Synology Photos 展示。
+<p align="center">
+  <img src="static/xiaomi-album-syncer-logo.png" alt="photoSyncer" width="150">
+</p>
 
-本项目基于 [XiaomiAlbumSyncer](https://github.com/Coooolfan/XiaomiAlbumSyncer) 开发。**本仓库新增的 iCloud、群晖 Photos 与删除同步功能，需要使用本仓库构建产物；上游镜像不能代替。**
+<p align="center"><strong>把小米云和 Apple iCloud Photos 稳定地同步到自己的存储。</strong></p>
+
+<p align="center">
+  <a href="https://github.com/gorquan/XiaomiAlbumSyncer/actions"><img src="https://img.shields.io/github/actions/workflow/status/gorquan/XiaomiAlbumSyncer/build.yml?label=build" alt="Build"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="GPL-3.0"></a>
+</p>
+
+<p align="center"><img src="docs/assets/sync-flow.png" alt="photoSyncer 同步流程"></p>
+
+photoSyncer 是一个面向家庭 NAS 的照片和视频同步工具，支持小米云、Apple iCloud Photos、多账号、定时任务、失败重试和 Synology Photos 展示。
 
 ## 功能
 
-- 小米与 iCloud 多账号绑定、相册选择、定时及手动同步。
-- 全量、时间线增量、位点增量模式；缺失或损坏的托管文件可在后续同步修复。
-- 所有任务都写入配置的统一根目录（例如 `/photos`），并按厂商、账号、图库隔离；群晖 Photos 开关只改变账号目录内的布局，同一资源出现在多个所选相册时仍只导出一份适配文件。
-- Apple Live Photo 保留图片和配套视频的同名配对及元数据；小米动态照片保留原始单文件结构。
-- 每个选中的媒体资源只在任务目标目录长期保存一份；下载和适配使用临时文件，支持来源校验、发布文件完整性保护及时间信息补齐。
-- 可选择镜像跟随云端删除，或保留本地文件作备份；小米位点增量仅支持备份。
-- Web 管理界面、[路径表达式](docs/expression-target-path.md)、[HTTPS](docs/ssl-suppot.md) 和 [Passkey](docs/passkey-login.md)。
+### 支持的内容
 
-群晖兼容范围、实机结果与限制见 [Synology Photos 使用说明](docs/synology-photos.md)。HEIC／视频预览取决于 Photos、Synology Image Assistant 和客户端解码能力；云端虚拟相册、收藏及人脸关系不自动迁移。
+- 从小米云或 iCloud 选择相册，手动或定时同步照片和视频。
+- 绑定多个小米、Apple 账号，账号和文件按来源隔离。
+- Apple Live Photo 保留图片和配套 MOV 的同名配对；小米动态照片保持云端原生单文件结构。
+- 录音同步已移除；小米任务不会显示 Apple Live Photo 选项。
+- 每个资源最终只保留一份目标文件，不建立长期 `originals` 原件库。
 
-## 从源码部署
+### 扫描方式
 
-需要 Git、Node.js 24.20+（24 系列）、JDK 25、Docker。先克隆本仓库，以下命令在仓库根目录执行：
+| 方式 | 小米 | iCloud | 适合场景 |
+| --- | --- | --- | --- |
+| 全量 | 支持 | 支持 | 第一次同步或需要完整重建 |
+| 时间线 | 支持 | 不使用 | 小米按日期变化降低扫描量 |
+| 位点增量 | 支持 | 支持 | 云端提供稳定变化游标时使用 |
+
+全量会重新枚举任务所选相册，但已有完整文件会按发布记录复用。时间线和位点只缩小云端检查范围，不会跳过必要的文件完整性检查。
+
+### 备份、镜像和群晖 Photos
+
+- **备份**：云端删除或移出任务所选相册后，本地文件继续保留。
+- **镜像**：资源不再属于任务所选相册时，本地托管文件会在下一次成功同步中清理。
+- 镜像只看当前任务选择的相册；照片仍在云端其他相册，不影响本任务的删除判断。
+- 小米位点增量只支持备份；其他组合按界面可选项为准。
+- **Photos 适配关闭**：保存云端下载的原始文件内容。
+- **Photos 适配开启**：在现有文件上生成适合 Photos 的 EXIF 时间和配对命名。
+- Photos 开关在下一次同步生效；已有可校验文件优先直接处理，不会无条件重新下载。
+- 关闭后会清理本任务生成的适配文件，并恢复可用的云端原件；再次开启会从现有文件继续生成缺失适配。
+
+### 完整性和文件位置
+
+文件校验是强制的：小米使用云端 SHA-1，iCloud 使用传输结果、文件大小、媒体容器和 Live Photo 结构检查。校验失败会保留任务状态并在后续同步重试。
+
+无论是否开启 Photos 适配，任务都使用统一根目录，并按厂商、账号和图库隔离：
+
+```text
+/photos/icloud-1/<图库>/asset_<资源>.heic
+/photos/icloud-1/<图库>/asset_<资源>.mov
+/photos/xiaomi-2/<图库>/asset_<资源>.jpg
+```
+
+状态目录中的 `media/receipts` 保存发布记录，`media/work` 只存放处理期间的临时文件。群晖 Photos 的预览和播放仍取决于 DSM、Photos、Synology Image Assistant、媒体编码和客户端能力；photoSyncer 不修改群晖数据库、不写入 `@eaDir`，也不会删除云端照片。
+
+## 快速部署
+
+### Docker Compose
+
+需要 Git、Node.js 24.20+、JDK 25 和 Docker。
 
 ```bash
+git clone https://github.com/gorquan/XiaomiAlbumSyncer.git photoSyncer
+cd photoSyncer
+
 (cd web && npm install && npm run build)
 mkdir -p server/src/main/resources/static
 cp -R web/dist/. server/src/main/resources/static/
 (cd server && ./gradlew clean solonJar -PappVersion="$(git rev-parse --short HEAD)")
-```
 
-将 `server/build/libs/` 中生成的可执行 JAR 复制为 `docker/app.jar`。不要选择带 `-plain` 后缀的 JAR。
-
-```bash
-cp "server/build/libs/XiaomiAlbumSyncer-$(git rev-parse --short HEAD).jar" docker/app.jar
+cp server/build/libs/XiaomiAlbumSyncer-$(git rev-parse --short HEAD).jar docker/app.jar
 mkdir -p db download
 docker compose -f docker/docker-compose.yml up -d --build
 ```
 
-构建和复制期间请保持 Git 提交不变。访问 `http://服务器IP:8232`，首次运行设置应用管理密码。该密码与小米、Apple 和 DSM 密码分别管理。远程访问建议通过反向代理启用 HTTPS。
+打开 `http://服务器IP:8232`，第一次运行时设置应用密码。这个密码只用于登录 photoSyncer，不等于小米、Apple 或 DSM 密码。
 
-Compose 使用本地构建的 `photosyncer:local` 镜像，包含 JRE 25 和 ExifTool。默认持久化目录为仓库下的 `db` 和 `download`。也可设置以下环境变量后启动：
+默认目录如下：
 
-| 变量 | 用途 | 默认值 |
+| 内容 | 宿主机默认目录 | 容器目录 |
 | --- | --- | --- |
-| `PHOTO_SYNCER_STATE_DIR` | 宿主机数据库与发布记录目录 | `../db`（相对 compose 文件） |
-| `PHOTO_SYNCER_EXPORT_DIR` | 宿主机展示文件目录 | `../download`（相对 compose 文件） |
-| `PHOTO_SYNCER_PORT` | 对外服务端口 | `8232` |
+| 数据库、发布记录、临时文件 | `./db` | `/app/db` |
+| 同步后的照片和视频 | `./download` | `/photos` |
 
-容器内数据库为 `/app/db/xiaomialbumsyncer.db`，发布记录和处理临时目录为 `/app/db/media`，媒体目标根目录为 `/photos`。数据库文件名保留历史名称，不影响功能。确保挂载目录可写，状态目录和媒体目标目录互不包含。同步完成后只保留目标文件，不另建原件库；处理期间需要容纳当前并发资源的临时文件。
+群晖部署时，把 `PHOTO_SYNCER_EXPORT_DIR` 指向 Photos 实际索引的目录，把任务目标填写为容器内的 `/photos`。状态目录建议放在 Photos 索引目录之外，例如：
 
-### 群晖 Container Manager
-
-先按上文构建镜像，或将构建机器的镜像通过 `docker save`／`docker load` 导入群晖，再使用 compose 文件启动（已导入镜像时无需 `--build`）。也可以在群晖上传 `docker/app.jar` 与 `docker/Dockerfile.jvm` 后构建镜像。
-
-以个人空间为例，将 `PHOTO_SYNCER_EXPORT_DIR` 设置为用户 Photos 下的专用目录，例如 `/volume3/homes/用户名/Photos/photoSyncer`；共享空间则使用实际 `/volumeN/photo` 下的专用目录。卷号按设备实际情况填写。
-
-若群晖默认 Docker 网络无法出网，可在镜像构建时添加 `--network host`，并在部署用的 compose 中设置 `network_mode: host`、环境变量 `SERVER_PORT: "8232"`，同时移除 `ports` 映射。任务目标路径仍为 `/photos`。使用宿主机用户 UID/GID 运行时，还需给该用户可写的 `/app/logs` 挂载。
-
-`PHOTO_SYNCER_STATE_DIR` 例如 `/volume3/docker/photoSyncer/db`，必须位于 Photos 索引目录之外。任务目标填写容器内路径 `/photos`。不要直接填写宿主机卷路径。无需特权模式，也无需修改群晖 Photos 数据库或 `@eaDir`。
-
-### 直接运行 JVM
-
-安装 JDK／JRE 25 和 ExifTool，按上文构建 JAR，在独立工作目录运行：
-
-```bash
-APP_DB_PATH=./db/xiaomialbumsyncer.db java --enable-native-access=ALL-UNNAMED -jar /实际路径/app.jar
+```yaml
+PHOTO_SYNCER_STATE_DIR=/volume2/docker/photoSyncer/db
+PHOTO_SYNCER_EXPORT_DIR=/volume2/photo
 ```
 
-默认监听 `8080`。在应用设置中填写本机 ExifTool 的可执行路径。`PHOTO_SYNCER_MEDIA_ROOT` 可指定发布记录和处理临时目录，默认在数据库目录下的 `media`；发布记录需要持久化，此目录须与媒体目标目录分开。
+不要把宿主机路径直接填进任务；任务始终使用容器内路径 `/photos`。运行用户必须对数据库目录和照片目录有读写权限。
 
-## 绑定账号和创建任务
+### 第一次配置
 
-1. 打开设置页，绑定小米或 Apple 账号。
-   - 小米推荐扫码添加；也支持填写 `userId` 和 `passToken`。首次访问云相册可能还需要完成小米云的设备／短信授权。
-   - Apple 使用 Apple Account 登录，按提示提交双重认证验证码；账号会话失效后需要重新登录。中国大陆账号选择对应服务区域。
-2. 同步账号列表会显示两家厂商的认证状态和最近检测时间，可点击“检测认证”检查当前会话。旧账号在首次检测前显示“待检测”；网络或服务异常显示“检测失败”，不等同于登录失效。
-3. 在任务页更新所选账号的远程相册列表。
-4. 创建任务，选择账号、相册、同步模式、时间及媒体类型。Cron 示例 `0 0 23 * * ?` 表示每天 23 点，按服务运行时区执行。
-5. 在“保存与同步”中选择“备份模式”或“镜像模式”，并独立设置“适配群晖 Photos”。使用群晖时打开适配开关，目标填 `/photos`。图片和实况配套视频分别控制；需要保留 Apple 动态部分时开启配套视频。
-6. 可先手动执行并查看任务历史；确认结果后启用定时执行。
+1. 在“设置”中绑定小米或 Apple 账号。小米推荐扫码登录；Apple 按提示登录并提交双重认证验证码。
+2. 在任务页刷新相册列表，选择要同步的相册和媒体类型。
+3. 选择扫描方式、备份或镜像模式、执行时间和并发参数。
+4. 如果使用群晖 Photos，把目标目录设为 `/photos` 并打开“适配群晖 Photos”。
+5. 先点击“立即执行”观察任务历史，确认无误后再开启定时执行。
 
-文件完整性校验由系统强制执行，不再提供关闭选项：小米下载内容必须匹配云端 SHA-1，iCloud 按传输结果、文件大小、媒体容器和动态照片结构校验。发布记录中的本地文件指纹只用于复用、发布后检查和安全清理，不代表 Apple 云端签名。校验失败的资源会保留失败状态，在后续同步中重试。
+## 开发与协作
 
-未开启群晖 Photos 适配时，自动同步保留云端原件的文件内容，不修改媒体元数据。开启后自动把云端记录的拍摄时间写入 EXIF，并生成 Photos 所需的配对命名；最终仍只保留目标文件。文件系统时间不再作为同步配置。
-
-群晖模式的目录示例：
-
-```text
-/photos/icloud-1/<图库摘要>/asset_<照片摘要>.heic
-/photos/icloud-1/<图库摘要>/asset_<照片摘要>.mov
-/photos/xiaomi-2/<图库摘要>/asset_<照片摘要>.jpg
-```
-
-旧任务保留原路径模式，可以开启群晖 Photos 适配。开启和关闭均会提示迁移，保存后在下次同步处理历史文件。下次同步优先使用本地已校验、版本匹配的原件生成群晖布局，仅对缺失、损坏或无法确认原件内容的资源补下载；新文件校验通过后，再根据发布凭证清理本计划对应的旧布局文件。失败时保留旧文件并在后续同步重试；外部修改、其他任务仍引用或无归属凭证的文件保留，迁移冲突会显示在任务历史中。开启适配时目标路径需要改为固定根目录。
-
-关闭时在同一个根目录和账号目录下恢复普通相册布局中的云端原件，再清理本计划的群晖布局文件；未改写内容的原件本地复用，补过 EXIF 的文件需要从云端重新下载才能完整还原，失败时保留现有文件。Live Photo 配套视频属于云端原件，会保留。
-
-## 删除与备份
-
-任务中的“本地保存模式”控制云端删除后的本地行为，与“适配群晖 Photos”开关独立：
-
-| 云厂商 | 扫描方式 | 备份 | 镜像 |
-| --- | --- | --- | --- |
-| 小米 | 全量 | 支持 | 支持，完整清单比较 |
-| 小米 | 时间线 | 支持 | 支持，按相册索引优化清单比较 |
-| 小米 | 位点增量 | 支持 | 不支持 |
-| iCloud | 全量 | 支持 | 支持，完整清单比较 |
-| iCloud | 位点增量 | 支持 | 支持，按变化流更新清单 |
-
-**镜像以任务所选相册的合集为准。** 照片移出所有所选相册，即使还在云端其他相册，本任务也会清理本地文件。仍在任一所选相册中则保留。备份模式保留云端删除或移出后的本地文件，继续使用原有扫描流程。
-
-**新建任务默认镜像模式；创建时选择小米位点增量仅提供备份。升级前未设置删除同步的旧任务保持备份模式。** 手机删除需先同步到云端，本地下一次成功检查后才清理。Apple 实况图片及配套视频作为一组处理。
-
-**备份／镜像模式、全量／时间线／位点扫描方式在计划创建后不可修改。** 如需切换，请新建计划。群晖 Photos 适配可以开关，但保存后只在下一次同步生效：关闭会恢复云端原件并删除本计划的适配文件，再次开启会从现有有效文件继续生成缺失的适配文件；执行时间、相册范围、性能等其他设置仍可编辑。
-
-全量镜像成功枚举完所选相册后，直接比较新旧清单；不再查询回收站或额外确认照片是否还在整个云端图库中。小米时间线首次建立完整清单；后续相册索引未变则复用清单，索引变化时重新枚举所有当前非空日期，覆盖同一天删一张再加一张、数量减少及整天清空。
-
-iCloud 位点镜像首次开启、所选相册范围改变或位点失效时建立完整基线；之后只读取新增、更新、删除和相册成员变化，并查询受影响记录的当前所选相册归属。每页清单、资产、历史计数及位点在同一事务中保存。全量模式每次直接枚举完整清单，不使用变化流做额外删除确认。
-
-登录失效、请求失败或不完整分页时保留已有文件，不用失败结果覆盖完整清单。应用只清理具有归属凭据、路径安全且校验匹配的托管文件；外部修改、符号链接或其他任务仍引用的文件会保留并报告。未完成的清理可以重试，旧版遗留且没有其他任务引用的副本按凭据兼容清理。应用不会删除云端照片。
-
-当前通过任务中的保存模式选择备份或跟随删除，不自动判断用户是在整理照片还是释放云端空间。详细规则见 [删除同步说明](docs/synology-photos.md#手机删除后同步清理)。
-
-## 升级与备份
-
-升级前停止容器，一起备份 `db`（含发布记录）、媒体目标目录及部署配置，再替换镜像。仅备份 SQLite 无法恢复媒体与发布凭据。不要在运行时只复制 SQLite 主文件而遗漏 WAL；可停止服务后复制，或使用 SQLite backup API。
-
-旧版 v2 数据导入入口在设置页。迁移前备份旧数据库，将其作为 `/app/old.db` 挂载给已完成密码初始化、尚无相册和下载记录的新实例，再执行“从 V2 导入数据”。迁移后检查任务目标路径和账号状态。
-
-## 开发与验证
+### 本地验证
 
 ```bash
 (cd web && npm run lint && npm run format && npm run build)
@@ -134,6 +116,24 @@ iCloud 位点镜像首次开启、所选相册范围改变或位点失效时建�
 (cd xas-mock && go test ./...)
 ```
 
-后端使用 Kotlin／Solon／Jimmer／SQLite，前端使用 Vue／TypeScript／Vite。实机格式验证记录见 [群晖验证](docs/plan/synology-photos-validation.md)，删除边界和自动化断言见 [删除验证](docs/plan/cloud-deletion-validation.md)。
+后端使用 Kotlin、Solon、Jimmer 和 SQLite，前端使用 Vue、TypeScript 和 Vite。提交代码前请至少运行与改动相关的验证；涉及同步、文件处理或数据库时，建议运行完整后端测试。
 
-本项目保留上游 [许可证](LICENSE) 与归属信息。
+### 协作约定
+
+- 一个提交只解决一个问题，提交信息说明行为变化。
+- 不要提交数据库、媒体文件、账号凭据、部署记录或本机路径。
+- README 和用户可见行为一起更新；协议研究和实机结论放在 `docs/`。
+- Pull Request 请说明改动范围、验证命令和可能影响的同步模式。
+
+协议说明、群晖实机结果和删除边界见：
+
+- [Synology Photos 使用说明](docs/synology-photos.md)
+- [云端删除验证](docs/plan/cloud-deletion-validation.md)
+- [iCloud Photos 开发参考](docs/icloud-api.md)
+- [第三方声明](docs/THIRD_PARTY_NOTICES.md)
+
+## 致谢与许可证
+
+感谢 [Coooolfan/XiaomiAlbumSyncer](https://github.com/Coooolfan/XiaomiAlbumSyncer) 的原始项目、协议研究和同步实现。本项目是在其基础上的继续开发，保留原项目的 GPL-3.0 许可证和归属信息。
+
+本项目新增代码同样按 [GNU GPL v3](LICENSE) 发布。
